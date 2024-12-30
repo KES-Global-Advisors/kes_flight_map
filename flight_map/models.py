@@ -32,3 +32,19 @@ class Workstream(models.Model):
         verbose_name = "Workstream"
         verbose_name_plural = "Workstreams"
         ordering = ["name"]
+
+
+class Milestone(models.Model):
+    """Create a milestone"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    deadline = models.DateField()
+    dependencies = models.ManyToManyField('self', blank=True, symmetrical=False, related_name="dependent_milestones")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Milestone"
+        verbose_name_plural = "Milestones"
+        ordering = ["deadline"]
