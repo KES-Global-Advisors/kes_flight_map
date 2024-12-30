@@ -48,3 +48,19 @@ class Milestone(models.Model):
         verbose_name = "Milestone"
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
+
+
+class Task(models.Model):
+    """Create a task"""
+    name = models.TextField()
+    key_stakeholders = models.TextField(blank=True, null=True)
+    time_required = models.CharField(max_length=100)
+    milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="tasks")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Task"
+        verbose_name_plural = "Tasks"
+        ordering = ["name"]
