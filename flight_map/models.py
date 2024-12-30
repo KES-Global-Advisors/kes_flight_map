@@ -16,3 +16,19 @@ class Program(models.Model):
         verbose_name = "Program"
         verbose_name_plural = "Programs"
         ordering = ["name"]
+
+
+class Workstream(models.Model):
+    """Create A Work stream"""
+    name = models.CharField(max_length=255)
+    lead = models.CharField(max_length=255)
+    sponsor = models.CharField(max_length=255)
+    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name="workstreams")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Workstream"
+        verbose_name_plural = "Workstreams"
+        ordering = ["name"]
