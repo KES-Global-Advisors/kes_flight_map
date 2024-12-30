@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User 
+from django.conf import settings
 
 # Create your models here.
 class Program(models.Model):
@@ -7,7 +7,7 @@ class Program(models.Model):
     name = models.CharField(max_length=255)
     vision = models.TextField()
     time_horizon = models.CharField(max_length=100)
-    stakeholders = models.ManyToManyField(User, related_name="programs")
+    stakeholders = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="programs")
 
     def __str__(self):
         return self.name
