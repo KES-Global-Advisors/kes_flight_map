@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'tenants',
     'users',
     'pytest_django',
+    'rest_framework',
 
     # Default apps
     'django.contrib.admin',
