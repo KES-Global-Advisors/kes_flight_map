@@ -43,14 +43,27 @@ def test_milestone_creation_with_dependencies():
 
 @pytest.mark.django_db
 def test_task_creation():
-    """Test that a task is created successfully"""
+    """Test that a task is created successfully with key stakeholders as users"""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    # Create a milestone
     milestone = Milestone.objects.create(name="Initial Planning", deadline="2024-02-01")
+    
+    # Create users for key stakeholders
+    user1 = User.objects.create_user(username="manager", password="password123")
+    user2 = User.objects.create_user(username="assistant", password="password123")
+    
+    # Create the task
     task = Task.objects.create(
         name="Create Gantt Chart",
-        key_stakeholders="Project Manager",
         time_required="2 days",
         milestone=milestone
     )
+    # Add key stakeholders
+    task.key_stakeholders.set([user1, user2])
+    
+    # Assertions
     assert task.name == "Create Gantt Chart"
-    assert task.key_stakeholders == "Project Manager"
+    assert list(task.key_stakeholders.all()) == [user1, user2]
     assert task.milestone == milestone
