@@ -53,7 +53,7 @@ class Milestone(models.Model):
 class Task(models.Model):
     """Create a task"""
     name = models.TextField()
-    key_stakeholders = models.TextField(blank=True, null=True)
+    key_stakeholders = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="tasks")
     time_required = models.CharField(max_length=100)
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="tasks")
 
