@@ -1,10 +1,44 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-from .models import Program, Workstream, Milestone, Task
-from .serializers import ProgramSerializer, WorkstreamSerializer, MilestoneSerializer, TaskSerializer
+from .models import Strategy, StrategicGoal, Program, Workstream, Milestone, Activity
+from .serializers import StrategySerializer, StrategicGoalSerializer, ProgramSerializer, WorkstreamSerializer, MilestoneSerializer, ActivitySerializer
 
 
-# Program Views
+class StrategyListCreateView(generics.ListCreateAPIView):
+    """
+    GET: List all strategies
+    POST: Create a new strategy
+    """
+    queryset = Strategy.objects.all()
+    serializer_class = StrategySerializer
+
+class StrategyRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Retrieve a single strategy
+    PUT/PATCH: Update a strategy
+    DELETE: Delete a strategy
+    """
+    queryset = Strategy.objects.all()
+    serializer_class = StrategySerializer
+
+class StrategicGoalListCreateView(generics.ListCreateAPIView):
+    """
+    GET: List all strategic goals
+    POST: Create a new strategic goal
+    """
+    queryset = StrategicGoal.objects.all()
+    serializer_class = StrategicGoalSerializer
+
+class StrategicGoalRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Retrieve a single strategic goal
+    PUT/PATCH: Update a strategic goal
+    DELETE: Delete a strategic goal
+    """
+    queryset = StrategicGoal.objects.all()
+    serializer_class = StrategicGoalSerializer
+
+
 class ProgramListCreateView(generics.ListCreateAPIView):
     """
     GET: List all programs
@@ -12,8 +46,6 @@ class ProgramListCreateView(generics.ListCreateAPIView):
     """
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
-    permission_classes = [IsAuthenticated]  # Ensure only authenticated users can access
-
 
 class ProgramRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -23,10 +55,8 @@ class ProgramRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
-    permission_classes = [IsAuthenticated]
 
 
-# Workstream Views
 class WorkstreamListCreateView(generics.ListCreateAPIView):
     """
     GET: List all workstreams
@@ -34,8 +64,6 @@ class WorkstreamListCreateView(generics.ListCreateAPIView):
     """
     queryset = Workstream.objects.all()
     serializer_class = WorkstreamSerializer
-    permission_classes = [IsAuthenticated]
-
 
 class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -45,10 +73,8 @@ class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
     """
     queryset = Workstream.objects.all()
     serializer_class = WorkstreamSerializer
-    permission_classes = [IsAuthenticated]
 
 
-# Milestone Views
 class MilestoneListCreateView(generics.ListCreateAPIView):
     """
     GET: List all milestones
@@ -56,8 +82,6 @@ class MilestoneListCreateView(generics.ListCreateAPIView):
     """
     queryset = Milestone.objects.all()
     serializer_class = MilestoneSerializer
-    permission_classes = [IsAuthenticated]
-
 
 class MilestoneRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -67,26 +91,21 @@ class MilestoneRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Milestone.objects.all()
     serializer_class = MilestoneSerializer
-    permission_classes = [IsAuthenticated]
 
 
-# Task Views
-class TaskListCreateView(generics.ListCreateAPIView):
+class ActivityListCreateView(generics.ListCreateAPIView):
     """
-    GET: List all tasks
-    POST: Create a new task
+    GET: List all activities
+    POST: Create a new activity
     """
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]
+    queryset = Activity.objects.all()
+    serializer_class = ActivitySerializer
 
-
-class TaskRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+class ActivityRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET: Retrieve a single task
-    PUT/PATCH: Update a task
-    DELETE: Delete a task
+    GET: Retrieve a single activity
+    PUT/PATCH: Update a activity
+    DELETE: Delete a activity
     """
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]
+    queryset = Activity.objects.all()
+    serializer_class = ActivitySerializer
