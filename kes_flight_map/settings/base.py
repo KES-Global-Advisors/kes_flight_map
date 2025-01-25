@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'users',
     'pytest_django',
     'rest_framework',
+    'rest_framework_simplejwt',
 
     # Default apps
     'django.contrib.admin',
@@ -120,3 +121,12 @@ LOGGING = {
         },
     },
 }
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ]
+}
+
+AUTH_USER_MODEL = 'users.CustomUser'
