@@ -13,11 +13,35 @@ class StrategySerializer(serializers.ModelSerializer):
         model = Strategy
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['executive_sponsors'] = [
+            {'id': sponsor.id, 'username': sponsor.username, 'email': sponsor.email}
+            for sponsor in instance.executive_sponsors.all()
+        ]
+        representation['strategy_leads'] = [
+            {'id': lead.id, 'username': lead.username, 'email': lead.email}
+            for lead in instance.strategy_leads.all()
+        ]
+        representation['communication_leads'] = [
+            {'id': lead.id, 'username': lead.username, 'email': lead.email}
+            for lead in instance.communication_leads.all()
+        ]
+        return representation
+
 
 class StrategicGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrategicGoal
         fields = '__all__'
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['strategy'] = {
+            'id': instance.strategy.id,
+            'name': instance.strategy.name,
+        }
+        return representation
 
 
 class ProgramSerializer(serializers.ModelSerializer):
@@ -31,6 +55,26 @@ class ProgramSerializer(serializers.ModelSerializer):
         model = Program
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['strategy'] = {
+            'id': instance.strategy.id,
+            'name': instance.strategy.name,
+        }
+        representation['executive_sponsors'] = [
+            {'id': sponsor.id, 'username': sponsor.username, 'email': sponsor.email}
+            for sponsor in instance.executive_sponsors.all()
+        ]
+        representation['program_leads'] = [
+            {'id': lead.id, 'username': lead.username, 'email': lead.email}
+            for lead in instance.program_leads.all()
+        ]
+        representation['workforce_sponsors'] = [
+            {'id': sponsor.id, 'username': sponsor.username, 'email': sponsor.email}
+            for sponsor in instance.workforce_sponsors.all()
+        ]
+        return representation
+
 
 class WorkstreamSerializer(serializers.ModelSerializer):
     workstream_leads = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
@@ -40,12 +84,34 @@ class WorkstreamSerializer(serializers.ModelSerializer):
         model = Workstream
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['program'] = {
+            'id': instance.program.id,
+            'name': instance.program.name,
+        }
+        representation['workstream_leads'] = [
+            {'id': lead.id, 'username': lead.username, 'email': lead.email}
+            for lead in instance.workstream_leads.all()
+        ]
+        representation['team_members'] = [
+            {'id': member.id, 'username': member.username, 'email': member.email}
+            for member in instance.team_members.all()
+        ]
+        return representation
 
 class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['workstream'] = {
+            'id': instance.workstream.id,
+            'name': instance.workstream.name,
+        }
+        return representation
 
 class ActivitySerializer(serializers.ModelSerializer):
     prerequisite_activities = serializers.PrimaryKeyRelatedField(many=True, queryset=Activity.objects.all())
@@ -56,3 +122,27 @@ class ActivitySerializer(serializers.ModelSerializer):
         model = Activity
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['workstream'] = {
+            'id': instance.workstream.id,
+            'name': instance.workstream.name,
+        }
+        if instance.milestone:
+            representation['milestone'] = {
+                'id': instance.milestone.id,
+                'name': instance.milestone.name,
+            }
+        representation['prerequisite_activities'] = [
+            {'id': activity.id, 'name': activity.name}
+            for activity in instance.prerequisite_activities.all()
+        ]
+        representation['parallel_activities'] = [
+            {'id': activity.id, 'name': activity.name}
+            for activity in instance.parallel_activities.all()
+        ]
+        representation['successive_activities'] = [
+            {'id': activity.id, 'name': activity.name}
+            for activity in instance.successive_activities.all()
+        ]
+        return representation
