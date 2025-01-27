@@ -5,7 +5,8 @@ from .views import (
     ProgramListCreateView, ProgramRetrieveUpdateDestroyView,
     WorkstreamListCreateView, WorkstreamRetrieveUpdateDestroyView,
     MilestoneListCreateView, MilestoneRetrieveUpdateDestroyView,
-    ActivityListCreateView, ActivityRetrieveUpdateDestroyView
+    ActivityListCreateView, ActivityRetrieveUpdateDestroyView,
+    RoadmapListCreateView, RoadmapRetrieveUpdateDestroyView,
 )
 
 urlpatterns = [
@@ -32,4 +33,8 @@ urlpatterns = [
     # Activity endpoints
     path('activities/', ActivityListCreateView.as_view(), name='activity-list-create'),
     path('activities/<int:pk>/', ActivityRetrieveUpdateDestroyView.as_view(), name='activity-detail'),
+
+    # Roadmap endpoints
+    path('roadmaps/', RoadmapListCreateView.as_view(), name='roadmap-list-create'),
+    path('roadmaps/<int:pk>/', RoadmapRetrieveUpdateDestroyView.as_view(), name='roadmap-detail'),
 ]
