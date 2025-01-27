@@ -11,6 +11,7 @@ class StrategyListCreateView(generics.ListCreateAPIView):
     """
     queryset = Strategy.objects.all()
     serializer_class = StrategySerializer
+    permission_classes = [IsAuthenticated]
 
 class StrategyRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -20,6 +21,7 @@ class StrategyRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Strategy.objects.all()
     serializer_class = StrategySerializer
+    permission_classes = [IsAuthenticated]
 
 class StrategicGoalListCreateView(generics.ListCreateAPIView):
     """
@@ -28,6 +30,7 @@ class StrategicGoalListCreateView(generics.ListCreateAPIView):
     """
     queryset = StrategicGoal.objects.all()
     serializer_class = StrategicGoalSerializer
+    permission_classes = [IsAuthenticated]
 
 class StrategicGoalRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -37,6 +40,7 @@ class StrategicGoalRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIVi
     """
     queryset = StrategicGoal.objects.all()
     serializer_class = StrategicGoalSerializer
+    permission_classes = [IsAuthenticated]
 
 
 class ProgramListCreateView(generics.ListCreateAPIView):
@@ -46,6 +50,7 @@ class ProgramListCreateView(generics.ListCreateAPIView):
     """
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
+    permission_classes = [IsAuthenticated]
 
 class ProgramRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -55,6 +60,7 @@ class ProgramRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
+    permission_classes = [IsAuthenticated]
 
 
 class WorkstreamListCreateView(generics.ListCreateAPIView):
@@ -64,6 +70,7 @@ class WorkstreamListCreateView(generics.ListCreateAPIView):
     """
     queryset = Workstream.objects.all()
     serializer_class = WorkstreamSerializer
+    permission_classes = [IsAuthenticated]
 
 class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -73,6 +80,7 @@ class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
     """
     queryset = Workstream.objects.all()
     serializer_class = WorkstreamSerializer
+    permission_classes = [IsAuthenticated]
 
 
 class MilestoneListCreateView(generics.ListCreateAPIView):
@@ -82,6 +90,7 @@ class MilestoneListCreateView(generics.ListCreateAPIView):
     """
     queryset = Milestone.objects.all()
     serializer_class = MilestoneSerializer
+    permission_classes = [IsAuthenticated]
 
 class MilestoneRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -91,6 +100,7 @@ class MilestoneRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Milestone.objects.all()
     serializer_class = MilestoneSerializer
+    permission_classes = [IsAuthenticated]
 
 
 class ActivityListCreateView(generics.ListCreateAPIView):
@@ -100,6 +110,7 @@ class ActivityListCreateView(generics.ListCreateAPIView):
     """
     queryset = Activity.objects.all()
     serializer_class = ActivitySerializer
+    permission_classes = [IsAuthenticated]
 
 class ActivityRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
@@ -109,3 +120,4 @@ class ActivityRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = Activity.objects.all()
     serializer_class = ActivitySerializer
+    permission_classes = [IsAuthenticated]
