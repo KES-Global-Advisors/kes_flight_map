@@ -1,8 +1,38 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-from .models import Strategy, StrategicGoal, Program, Workstream, Milestone, Activity
-from .serializers import StrategySerializer, StrategicGoalSerializer, ProgramSerializer, WorkstreamSerializer, MilestoneSerializer, ActivitySerializer
+from .models import Roadmap, Strategy, StrategicGoal, Program, Workstream, Milestone, Activity
+from .serializers import RoadmapSerializer, StrategySerializer, StrategicGoalSerializer, ProgramSerializer, WorkstreamSerializer, MilestoneSerializer, ActivitySerializer
 
+
+# ---- New Roadmap API View ----
+class RoadmapListCreateView(generics.ListCreateAPIView):
+    """
+    GET: List all roadmaps
+    POST: Create a new roadmap
+    """
+    queryset = Roadmap.objects.prefetch_related('strategies__programs__workstreams')
+    serializer_class = RoadmapSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class RoadmapRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Retrieve a roadmap
+    PUT/PATCH: Update a roadmap
+    DELETE: Delete a roadmap (cascades to strategies, programs, etc.)
+    """
+    queryset = Roadmap.objects.prefetch_related(
+        'strategies__programs__workstreams__milestones',
+        'strategies__programs__workstreams__activities',
+        'strategies__executive_sponsors',  # Optimize user relationships
+        'strategies__programs__executive_sponsors'
+    )
+    serializer_class = RoadmapSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Optional: Filter by roadmap ID or owner
+        return super().get_queryset().filter(id=self.kwargs['pk'])
 
 class StrategyListCreateView(generics.ListCreateAPIView):
     """

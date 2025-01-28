@@ -1,10 +1,24 @@
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 
 # Create your models here.
 
+class Roadmap(models.Model):
+    """Central roadmap container for all components"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_roadmaps")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Strategy(models.Model):
     """Create a strategy"""
+    roadmap = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="strategies")  # Link to Roadmap
     name = models.CharField(max_length=255)
     tagline = models.CharField(max_length=255, blank=True, null=True)
     vision = models.TextField()
@@ -21,6 +35,13 @@ class Strategy(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        # Validate against parent Roadmap
+        if self.roadmap:
+            latest_program_date = self.programs.aggregate(models.Max('time_horizon'))['time_horizon__max']
+            if latest_program_date and self.time_horizon < latest_program_date:
+                raise ValidationError("Strategy time horizon cannot be earlier than its latest program's horizon.")
     
     class Meta:
         verbose_name = "Strategy"
@@ -68,7 +89,12 @@ class Program(models.Model):
         if not self.name:
             self.name = self.strategy.name
         super().save(*args, **kwargs)
-    
+
+    def clean(self):
+        # Validate against parent Strategy
+        if self.strategy and self.time_horizon > self.strategy.time_horizon:
+            raise ValidationError("Program time horizon cannot exceed its parent strategy's horizon.")
+
     class Meta:
         verbose_name = "Program"
         verbose_name_plural = "Programs"
@@ -139,6 +165,12 @@ class Activity(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        if self.pk:
+            for rel_field in [self.prerequisite_activities, self.parallel_activities, self.successive_activities]:
+                if rel_field.filter(pk=self.pk).exists():
+                    raise ValidationError("Activity cannot reference itself in any dependency field.")
 
     class Meta:
         verbose_name = "Activity"
