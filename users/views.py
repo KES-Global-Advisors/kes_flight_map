@@ -161,19 +161,46 @@ class CustomTokenRefreshView(TokenRefreshView):
 @method_decorator(csrf_protect, name='dispatch')
 class LogoutView(APIView):
     """
-    View to handle user logout by blacklisting the refresh token.
+    Handles user logout by blacklisting refresh token and clearing cookies
     """
     def post(self, request):
+        # Extract refresh token from cookies
         refresh_token = request.COOKIES.get('refresh_token')
+        
+        # Blacklist the refresh token if present
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
+                logger.info(f"Successfully blacklisted token for user {token.payload.get('user_id')}")
             except Exception as e:
-                logger.error(f"Error blacklisting token: {str(e)}")
+                logger.error(f"Error blacklisting token: {str(e)}", 
+                           extra={'user_id': token.payload.get('user_id', 'unknown')})
         
-        response = Response({'message': 'Logged out successfully'}, status=status.HTTP_200_OK)
-        response.delete_cookie('refresh_token')
+        # Build response with cookie clearing
+        response = Response(
+            {'detail': 'Successfully logged out'},
+            status=status.HTTP_200_OK
+        )
+        
+        # Secure cookie deletion parameters (match cookie settings)
+        response.delete_cookie(
+            'refresh_token',
+            path='/',
+            domain=None,
+            samesite='Lax',
+            secure=False  # Set True in production
+        )
+        
+        # Clear CSRF token cookie if needed
+        response.delete_cookie(
+            'csrftoken',
+            path='/',
+            domain=None,
+            samesite='Lax',
+            secure=False  # Set True in production
+        )
+        
         return response
 
 
