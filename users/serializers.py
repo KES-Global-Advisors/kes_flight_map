@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from kes_flight_map.settings import base as settings
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -52,22 +53,46 @@ class PasswordResetSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         try:
-            User.objects.get(email=value)
+            return User.objects.get(email=value)
         except User.DoesNotExist:
             raise serializers.ValidationError("No user found with this email address.")
-        return value
 
     def save(self):
-        email = self.validated_data['email']
-        user = User.objects.get(email=email)
+        user = self.validated_data['email']
         token = PasswordResetTokenGenerator().make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-        reset_link = f"http://your-frontend-domain/reset-password/{uid}/{token}/"
+        
+        reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        
         send_mail(
             subject="Password Reset Request",
             message=f"Click the link to reset your password: {reset_link}",
             from_email="no-reply@yourdomain.com",
-            recipient_list=[email],
+            recipient_list=[user.email],
+            html_message=f'<p>Click <a href="{reset_link}">here</a> to reset your password</p>'
         )
-        return {"message": "Password reset email sent successfully!"}
+        
+# class PasswordResetSerializer(serializers.Serializer):
+#     email = serializers.EmailField()
+
+#     def validate_email(self, value):
+#         try:
+#             User.objects.get(email=value)
+#         except User.DoesNotExist:
+#             raise serializers.ValidationError("No user found with this email address.")
+#         return value
+
+#     def save(self):
+#         email = self.validated_data['email']
+#         user = User.objects.get(email=email)
+#         token = PasswordResetTokenGenerator().make_token(user)
+#         uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+#         reset_link = f"http://your-frontend-domain/reset-password/{uid}/{token}/"
+#         send_mail(
+#             subject="Password Reset Request",
+#             message=f"Click the link to reset your password: {reset_link}",
+#             from_email="no-reply@yourdomain.com",
+#             recipient_list=[email],
+#         )
+#         return {"message": "Password reset email sent successfully!"}

@@ -1,4 +1,5 @@
 import environ
+import os
 from pathlib import Path
 
 # Initialize environment variables
@@ -8,7 +9,10 @@ env = environ.Env(
 
 # Load .env file
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-environ.Env.read_env(BASE_DIR / ".env")
+# environ.Env.read_env(BASE_DIR / ".env")
+# Load environment variables based on ENV_FILE setting
+ENV_FILE = env.str('ENV_FILE', default='.env')
+environ.Env.read_env(os.path.join(BASE_DIR, ENV_FILE))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="default-secret-key")
@@ -204,3 +208,16 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# Add frontend URL to settings
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# Add to base.py
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_USE_SSL = env.bool('EMAIL_USE_SSL', default=False)
+EMAIL_TIMEOUT = env.int('EMAIL_TIMEOUT', default=10)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='webmaster@localhost')
+SERVER_EMAIL = env('SERVER_EMAIL', default='root@localhost')

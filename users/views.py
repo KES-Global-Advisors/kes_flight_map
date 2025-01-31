@@ -23,8 +23,8 @@ from rest_framework.response import Response
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
 from django.utils.decorators import method_decorator
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.http import HttpResponse
-from django.views import View
+from kes_flight_map.settings import base as settings
+from kes_flight_map.tasks import send_password_reset_email
 import logging
 
 User = get_user_model()
@@ -227,16 +227,36 @@ class RegisterView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# class PasswordResetView(APIView):
+#     @method_decorator(ratelimit(key='post:email', rate='5/h', method='POST'))
+#     @method_decorator(csrf_protect)
+#     def post(self, request):
+#         serializer = PasswordResetSerializer(data=request.data)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response({'message': 'Password reset email sent successfully!'}, status=status.HTTP_200_OK)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class PasswordResetView(APIView):
     def post(self, request):
         serializer = PasswordResetSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response({'message': 'Password reset email sent successfully!'}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            user = serializer.validated_data['email']
+            token = PasswordResetTokenGenerator().make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+            
+            # Queue email task
+            send_password_reset_email.delay(
+                email=user.email,
+                reset_link=reset_link
+            )
+            
+            return Response({'message': 'Password reset email queued'}, status=200)
 
 
 class PasswordUpdateView(APIView):
+    @method_decorator(ratelimit(key='post:password', rate='3/h', method='POST'))
     def post(self, request, uidb64, token):
         try:
             uid = force_str(urlsafe_base64_decode(uidb64))
