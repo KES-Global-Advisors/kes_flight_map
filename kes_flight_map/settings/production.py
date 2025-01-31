@@ -1,4 +1,5 @@
 from .base import *
+environ.Env.read_env(os.path.join(BASE_DIR, '.env.prod'))
 
 # Production-specific configurations
 DEBUG = env.bool("DEBUG", default=False)
@@ -19,11 +20,25 @@ DATABASES = {
 
 # Email settings for production
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.example.com")
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
-EMAIL_HOST_USER = env("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+EMAIL_HOST = env('MAILGUN_SMTP_SERVER', default='smtp.mailgun.org')
+EMAIL_PORT = env.int('MAILGUN_SMTP_PORT', default=587)
+EMAIL_HOST_USER = env('MAILGUN_SMTP_LOGIN')
+EMAIL_HOST_PASSWORD = env('MAILGUN_SMTP_PASSWORD')
+EMAIL_USE_TLS = True
+
+# Enhanced security headers
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+
+# Content Security Policy Middleware (add to MIDDLEWARE)
+MIDDLEWARE += ['csp.middleware.CSPMiddleware']
+
+CSP_DEFAULT_SRC = ["'self'"]
+CSP_SCRIPT_SRC = ["'self'", "'unsafe-inline'", "cdn.example.com"]
+CSP_STYLE_SRC = ["'self'", "'unsafe-inline'", "fonts.googleapis.com"]
+CSP_FONT_SRC = ["'self'", "fonts.gstatic.com"]
+CSP_IMG_SRC = ["'self'", "data:", "cdn.example.com"]
 
 # Security settings
 SECURE_SSL_REDIRECT = True
@@ -32,6 +47,13 @@ CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
+
+# Celery configuration
+CELERY_TIMEZONE = "UTC"
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TASK_TRACK_STARTED = True
+CELERY_BROKER_URL = 'redis://redis:6379/0'
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
 
 # Static and media file hosting
 STATIC_URL = '/static/'
@@ -59,3 +81,10 @@ LOGGING = {
         },
     },
 }
+
+# production.py
+if DEBUG:
+    raise ValueError("DEBUG must be False in production!")
+
+if 'localhost' in ALLOWED_HOSTS:
+    raise ValueError("Remove localhost from production hosts!")

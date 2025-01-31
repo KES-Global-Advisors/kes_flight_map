@@ -5,15 +5,23 @@ from .views import (
     PasswordUpdateView,
     RoleAssignmentView,
     RoleListView,
-    UserListView,
+    AdminUserListView,
+    CustomTokenObtainPairView,
+    CustomTokenRefreshView,
+    LogoutView,
+    GetCSRFToken,
+    CurrentUserView,
 )
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
     # Authentication Endpoints
     path('register/', RegisterView.as_view(), name='register'),
-    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
+    path('logout/', LogoutView.as_view(), name='logout'),
+    
+    # Add CSRF endpoint
+    path('csrf/', GetCSRFToken.as_view(), name='csrf_token'),
 
     # Password Management
     path('password-reset/', PasswordResetView.as_view(), name='password-reset'),
@@ -24,5 +32,6 @@ urlpatterns = [
     path('assign-role/<int:pk>/', RoleAssignmentView.as_view(), name='assign-role'),
 
     # User Management
-    path('', UserListView.as_view(), name='user-list'),
+    path('', AdminUserListView.as_view(), name='user-list'),
+    path('me/', CurrentUserView.as_view(), name='current-user'),
 ]

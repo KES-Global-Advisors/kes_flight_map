@@ -42,3 +42,8 @@ Thumbs.db
 .hg/ 
 .vscode/ 
 .logs/
+
+# Ignore sensitive files
+.env.prod
+.env.private
+*.env.local

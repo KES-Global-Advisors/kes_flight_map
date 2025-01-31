@@ -18,4 +18,10 @@ DATABASES = {
 }
 
 # Email backend for development
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Update dev.py email settings
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Use SMTP even in dev
+EMAIL_HOST = env('DEV_EMAIL_HOST', default='smtp.mailtrap.io')
+EMAIL_HOST_USER = env('DEV_EMAIL_USER', default='')
+EMAIL_HOST_PASSWORD = env('DEV_EMAIL_PASSWORD', default='')
+EMAIL_PORT = env.int('DEV_EMAIL_PORT', default=2525)
