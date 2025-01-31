@@ -9,7 +9,8 @@ from .views import (
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
     LogoutView,
-    GetCSRFToken
+    GetCSRFToken,
+    CurrentUserView,
 )
 
 urlpatterns = [
@@ -32,4 +33,5 @@ urlpatterns = [
 
     # User Management
     path('', AdminUserListView.as_view(), name='user-list'),
+    path('me/', CurrentUserView.as_view(), name='current-user'),
 ]

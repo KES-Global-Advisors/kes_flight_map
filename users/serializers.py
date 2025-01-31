@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode
@@ -7,6 +8,15 @@ from django.core.mail import send_mail
 
 User = get_user_model()
 
+# Custom Token Serializer
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['username'] = user.username
+        token['email'] = user.email
+        token['name'] = user.get_full_name()  # Or user.first_name + user.last_name
+        return token
 
 # User Serializer
 class UserSerializer(serializers.ModelSerializer):

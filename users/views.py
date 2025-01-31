@@ -10,7 +10,7 @@ from django.core.mail import send_mail
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .serializers import UserSerializer, UserCreateSerializer, PasswordResetSerializer
+from .serializers import UserSerializer, UserCreateSerializer, PasswordResetSerializer, CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.response import Response
 from rest_framework import status
@@ -30,6 +30,15 @@ import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserSerializer
+
+    def get(self, request):
+        serializer = self.serializer_class(request.user)
+        return Response(serializer.data)
+    
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 class GetCSRFToken(APIView):
@@ -60,6 +69,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     Custom view to obtain JWT token pairs (access and refresh tokens).
     This view also includes CSRF protection and rate limiting to prevent brute force attacks.
     """
+    serializer_class = CustomTokenObtainPairSerializer
     authentication_classes = []  # Disable default session/auth classes
 
     @method_decorator(ratelimit(key='post:username', rate='3/h', method='POST')) 
