@@ -1,195 +1,273 @@
 from rest_framework import serializers
-from .models import Roadmap, Strategy, StrategicGoal, Program, Workstream, Milestone, Activity
+from .models import (
+    Roadmap, Strategy, StrategicGoal, Program,
+    Workstream, Milestone, Activity,
+    MilestoneContributor, ActivityContributor
+)
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
-# Dynamically retrieve the user model based on AUTH_USER_MODEL setting
 User = get_user_model()
 
-# ---- New Roadmap Serializer ----
-
 class StrategicGoalSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = StrategicGoal
-        fields = '__all__'
+        fields = ['id', 'category', 'goal_text', 'strategy']
 
     def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['strategy'] = {
+        rep = super().to_representation(instance)
+        rep['strategy'] = {
             'id': instance.strategy.id,
-            'name': instance.strategy.name,
+            'name': instance.strategy.strategy
         }
-        return representation
+        return rep
     
 
+class ContributorSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+
+    class Meta:
+        fields = ['user', 'username', 'email']
+
+class MilestoneContributorSerializer(ContributorSerializer):
+    class Meta(ContributorSerializer.Meta):
+        model = MilestoneContributor
+
+class ActivityContributorSerializer(ContributorSerializer):
+    class Meta(ContributorSerializer.Meta):
+        model = ActivityContributor
+
 class ActivitySerializer(serializers.ModelSerializer):
-    prerequisite_activities = serializers.PrimaryKeyRelatedField(many=True, queryset=Activity.objects.all())
-    parallel_activities = serializers.PrimaryKeyRelatedField(many=True, queryset=Activity.objects.all())
-    successive_activities = serializers.PrimaryKeyRelatedField(many=True, queryset=Activity.objects.all())
+    status = serializers.ChoiceField(choices=Activity.STATUS_CHOICES)
+    contributors = ActivityContributorSerializer(many=True, read_only=True)
+    strategic_goals = serializers.SerializerMethodField()
+    delay_days = serializers.SerializerMethodField()
+    actual_duration = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = Activity
         fields = '__all__'
-
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['workstream'] = {
-            'id': instance.workstream.id,
-            'name': instance.workstream.name,
+        extra_kwargs = {
+            'completed_date': {'read_only': True},
+            'actual_start_date': {'required': False}
         }
-        if instance.milestone:
-            representation['milestone'] = {
-                'id': instance.milestone.id,
-                'name': instance.milestone.name,
-            }
-        representation['prerequisite_activities'] = [
-            {'id': activity.id, 'name': activity.name}
-            for activity in instance.prerequisite_activities.all()
-        ]
-        representation['parallel_activities'] = [
-            {'id': activity.id, 'name': activity.name}
-            for activity in instance.parallel_activities.all()
-        ]
-        representation['successive_activities'] = [
-            {'id': activity.id, 'name': activity.name}
-            for activity in instance.successive_activities.all()
-        ]
-        return representation
-    
 
+    def get_delay_days(self, obj):
+        if obj.completed_date and obj.completed_date > obj.target_end_date:
+            return (obj.completed_date - obj.target_end_date).days
+        return 0
+
+    def get_actual_duration(self, obj):
+        if obj.actual_start_date and obj.completed_date:
+            return (obj.completed_date - obj.actual_start_date).days
+        return None
+
+    def get_is_overdue(self, obj):
+        if obj.status != 'completed' and timezone.now().date() > obj.target_end_date:
+            return True
+        return False
+
+    def get_strategic_goals(self, obj):
+        if obj.milestone:
+            return StrategicGoalSerializer(
+                obj.milestone.strategic_goals.all(),
+                many=True,
+                context=self.context
+            ).data
+        return []
+
+    def validate(self, data):
+        if data.get('status') == 'completed' and not data.get('completed_date'):
+            data['completed_date'] = timezone.now().date()
+        
+        if data.get('actual_start_date') and data.get('target_start_date'):
+            if data['actual_start_date'] < data['target_start_date']:
+                raise serializers.ValidationError(
+                    "Actual start date cannot precede target start date"
+                )
+
+        if data.get('completed_date'):
+            # When updating, if target_start_date isn't provided in data, use instance's value.
+            target_start = data.get('target_start_date')
+            if not target_start and self.instance:
+                target_start = self.instance.target_start_date
+            if target_start and data['completed_date'] < target_start:
+                raise serializers.ValidationError(
+                    "Completion date cannot be before target start date"
+                )
+
+        return data
 
 class MilestoneSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(choices=Milestone.STATUS_CHOICES)
     activities = ActivitySerializer(many=True, read_only=True)
+    contributors = MilestoneContributorSerializer(many=True, read_only=True)
+    strategic_goals = StrategicGoalSerializer(many=True, read_only=True)
+    strategic_goal_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=StrategicGoal.objects.all(),
+        source='strategic_goals',
+        write_only=True,
+        required=False
+    )
+    current_progress = serializers.IntegerField(read_only=True)
+    timeframe_category = serializers.CharField(read_only=True)
+
     class Meta:
         model = Milestone
         fields = '__all__'
-
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['workstream'] = {
-            'id': instance.workstream.id,
-            'name': instance.workstream.name,
+        extra_kwargs = {
+            'completed_date': {'read_only': True}
         }
-        return representation
 
+    def validate(self, data):
+        if data.get('status') == 'completed' and not data.get('completed_date'):
+            data['completed_date'] = timezone.now().date()
+        return data
 
 class WorkstreamSerializer(serializers.ModelSerializer):
-        # Add nested milestones and activities
     milestones = MilestoneSerializer(many=True, read_only=True)
     activities = ActivitySerializer(many=True, read_only=True)
-    workstream_leads = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    team_members = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
+    contributors = serializers.SerializerMethodField()
+    progress_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Workstream
         fields = '__all__'
 
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['program'] = {
-            'id': instance.program.id,
-            'name': instance.program.name,
-        }
-        representation['workstream_leads'] = [
-            {'id': lead.id, 'username': lead.username}
-            for lead in instance.workstream_leads.all()
-        ]
-        representation['team_members'] = [
-            {'id': member.id, 'username': member.username}
-            for member in instance.team_members.all()
-        ]
-        return representation
+    def get_contributors(self, obj):
+        contributors = obj.get_contributors().distinct()
+        return [{
+            'id': user.id,
+            'username': user.username
+        } for user in contributors]
 
+    def get_progress_summary(self, obj):
+        return {
+            'total_milestones': obj.milestones.count(),
+            'completed_milestones': obj.milestones.filter(status='completed').count(),
+            'in_progress_milestones': obj.milestones.filter(status='in_progress').count()
+        }
 
 class ProgramSerializer(serializers.ModelSerializer):
-        # Add nested workstreams and goals
     workstreams = WorkstreamSerializer(many=True, read_only=True)
-    executive_sponsors = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    program_leads = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    workforce_sponsors = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    # Allow writing via IDs while nesting read data
-    key_improvement_targets = StrategicGoalSerializer(many=True, read_only=True)
-    key_organizational_goals = StrategicGoalSerializer(many=True, read_only=True)
-    key_improvement_targets_ids = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=StrategicGoal.objects.filter(category="business"), 
-        source='key_improvement_targets',
-        write_only=True,
-        required=False
-    )
-    key_organizational_goals_ids = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=StrategicGoal.objects.filter(category="organizational"), 
-        source='key_organizational_goals',
-        write_only=True,
-        required=False
-    )
+    progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Program
-        fields = (
-            'id', 'strategy', 'name', 'vision', 'time_horizon', 
-            'executive_sponsors', 'program_leads', 'workforce_sponsors',
-            'key_improvement_targets', 'key_organizational_goals',
-            'workstreams', 'key_improvement_targets_ids', 'key_organizational_goals_ids'
-        )
+        fields = '__all__'
 
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['strategy'] = {
-            'id': instance.strategy.id,
-            'name': instance.strategy.name,
+    def get_progress(self, obj):
+        milestones = Milestone.objects.filter(workstream__program=obj)
+        total = milestones.count()
+        completed = milestones.filter(status='completed').count()
+        if total == 0:
+            return {'percentage': 0, 'total': 0, 'completed': 0}
+        return {
+            'total': total,
+            'completed': completed,
+            'percentage': int((completed / total) * 100) if total > 0 else 0
         }
-        representation['executive_sponsors'] = [
-            {'id': sponsor.id, 'username': sponsor.username}
-            for sponsor in instance.executive_sponsors.all()
-        ]
-        representation['program_leads'] = [
-            {'id': lead.id, 'username': lead.username}
-            for lead in instance.program_leads.all()
-        ]
-        representation['workforce_sponsors'] = [
-            {'id': sponsor.id, 'username': sponsor.username}
-            for sponsor in instance.workforce_sponsors.all()
-        ]
-        return representation
-    
 
 class StrategySerializer(serializers.ModelSerializer):
     programs = ProgramSerializer(many=True, read_only=True)
-    executive_sponsors = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    strategy_leads = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
-    communication_leads = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all())
+    goal_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Strategy
         fields = '__all__'
 
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['executive_sponsors'] = [
-            {'id': sponsor.id, 'username': sponsor.username}
-            for sponsor in instance.executive_sponsors.all()
-        ]
-        representation['strategy_leads'] = [
-            {'id': lead.id, 'username': lead.username}
-            for lead in instance.strategy_leads.all()
-        ]
-        representation['communication_leads'] = [
-            {'id': lead.id, 'username': lead.username}
-            for lead in instance.communication_leads.all()
-        ]
-        return representation
-    
+    def get_goal_summary(self, obj):
+        return {
+            'business_goals': obj.goals.filter(category='business').count(),
+            'organizational_goals': obj.goals.filter(category='organizational').count()
+        }
 
 class RoadmapSerializer(serializers.ModelSerializer):
-    # strategies = serializers.SerializerMethodField()
     strategies = StrategySerializer(many=True, read_only=True)
+    milestone_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Roadmap
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
 
-    def get_strategies(self, obj):
-        strategies = obj.strategies.all()
-        return StrategySerializer(strategies, many=True, context=self.context).data
+    def get_milestone_summary(self, obj):
+        milestones = Milestone.objects.filter(workstream__program__strategy__roadmap=obj)
+        return {
+            'total': milestones.count(),
+            'completed': milestones.filter(status='completed').count(),
+            'in_progress': milestones.filter(status='in_progress').count(),
+            'overdue': milestones.filter(deadline__lt=timezone.now().date(), status__in=['not_started', 'in_progress']).count()
+        }
+
+# Dashboard-specific serializers
+class DashboardMilestoneSerializer(serializers.ModelSerializer):
+    program = serializers.CharField(source='workstream.program.name', read_only=True)
+    strategy = serializers.CharField(source='workstream.program.strategy.name', read_only=True)
+    timeframe_category = serializers.CharField(source='timeframe_category')
+    contributors = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Milestone
+        fields = [
+            'id', 'name', 'status', 'deadline', 'current_progress',
+            'program', 'strategy', 'timeframe_category', 'contributors'
+        ]
+
+    def get_contributors(self, obj):
+        return obj.contributors.values('user__username')
+
+class EmployeeContributionSerializer(serializers.ModelSerializer):
+    milestones = serializers.SerializerMethodField()
+    activities = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'milestones', 'activities']
+
+    def get_milestones(self, obj):
+        return {
+            'completed': obj.milestonecontributor_set.filter(milestone__status='completed').count(),
+            'in_progress': obj.milestonecontributor_set.filter(milestone__status='in_progress').count()
+        }
+
+    def get_activities(self, obj):
+        return {
+            'completed': obj.activitycontributor_set.filter(activity__status='completed').count(),
+            'in_progress': obj.activitycontributor_set.filter(activity__status='in_progress').count()
+        }
+
+# Status update serializers
+class MilestoneStatusSerializer(serializers.ModelSerializer):
+    
+    def validate(self, data):
+        if data.get('status') == 'completed' and not data.get('completed_date'):
+            data['completed_date'] = timezone.now().date()
+        return data
+
+    class Meta:
+        model = Milestone
+        fields = ['status', 'completed_date']
+        extra_kwargs = {
+            'completed_date': {'required': False}
+        }
+
+
+class ActivityStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Activity
+        fields = ['status', 'completed_date', 'actual_start_date']
+        extra_kwargs = {
+            'completed_date': {'required': False},
+            'actual_start_date': {'required': False}
+        }
+
+    def validate(self, data):
+        if data.get('status') == 'in_progress' and not data.get('actual_start_date'):
+            data['actual_start_date'] = timezone.now().date()
+        return data
