@@ -253,6 +253,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             workstream__program__strategy__roadmap__owner=self.request.user
         )
 
+
     @action(detail=True, methods=['get'])
     def insights(self, request, pk=None):
         milestone = get_object_or_404(Milestone.objects.annotate(
@@ -301,16 +302,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return Activity.objects.annotate(
-            delay_days=Case(
-                When(
-                    completed_date__gt=F('target_end_date'),
-                    then=F('completed_date') - F('target_end_date')
-                ),
-                default=Value(0),
-                output_field=IntegerField()
-            )
-        ).filter(
+        return Activity.objects.annotate_delay().filter(
             workstream__program__strategy__roadmap__owner=self.request.user
         ).select_related('milestone', 'workstream')
 
@@ -322,6 +314,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class EmployeeContributionsView(generics.ListAPIView):
     serializer_class = EmployeeContributionSerializer
@@ -396,19 +389,6 @@ class DashboardMilestoneView(generics.ListAPIView):
     }
 
     def get_queryset(self):
-        return Milestone.objects.annotate(
-            current_progress=Case(
-                When(activities__isnull=True, then=Value(0)),
-                default=100.0 * Count(
-                    'activities', 
-                    filter=Q(activities__status='completed')
-                ) / Count('activities'),
-                output_field=FloatField()
-            )
-        ).filter(
+        return Milestone.objects.annotate_progress().filter(
             workstream__program__strategy__roadmap__owner=self.request.user
-        ).select_related(
-            'workstream__program__strategy'
-        ).prefetch_related(
-            'contributors__user'
-        ).distinct()
+        ).select_related('workstream__program__strategy')
