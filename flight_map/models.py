@@ -3,7 +3,11 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from django.db.models import Case, When, Value, FloatField, F, ExpressionWrapper, DurationField, IntegerField
+from django.db.models import (
+    Case, When, Value, FloatField, IntegerField, F, ExpressionWrapper,
+    DurationField, Count, Q
+)
+from django.db.models.functions import ExtractDay, Greatest
 
 User = get_user_model()
 
@@ -11,21 +15,16 @@ User = get_user_model()
 class MilestoneQuerySet(models.QuerySet):
     def annotate_progress(self):
         return self.annotate(
-            current_progress=Case(
+            calculated_progress=Case(
                 When(activities__isnull=True, then=Value(0.0)),
-                default=Case(
-                    When(activities__count=0, then=Value(0.0)),
-                    default=100.0 * models.Count(
-                        'activities',
-                        filter=models.Q(activities__status='completed')
-                    ) / models.Count('activities'),
-                    output_field=FloatField()
-                ),
+                default=100.0 * Count(
+                    'activities',
+                    filter=Q(activities__status='completed')
+                ) / Greatest(Count('activities'), 1),
                 output_field=FloatField()
             )
         )
     
-
 class ActivityQuerySet(models.QuerySet):
     def annotate_delay(self):
         return self.annotate(
@@ -33,9 +32,11 @@ class ActivityQuerySet(models.QuerySet):
                 When(
                     completed_date__isnull=False,
                     completed_date__gt=F('target_end_date'),
-                    then=ExpressionWrapper(
-                        F('completed_date') - F('target_end_date'),
-                        output_field=DurationField()
+                    then=ExtractDay(
+                        ExpressionWrapper(
+                            F('completed_date') - F('target_end_date'),
+                            output_field=DurationField()
+                        )
                     )
                 ),
                 default=Value(0),
@@ -43,7 +44,7 @@ class ActivityQuerySet(models.QuerySet):
             )
         )
     
-    
+
 class Roadmap(models.Model):
     """Central roadmap container for all components"""
     name = models.CharField(max_length=255)
@@ -162,6 +163,7 @@ class Workstream(models.Model):
         verbose_name_plural = "Workstreams"
         ordering = ["name"]
 
+
 class Milestone(models.Model):
     """Progress tracking milestone"""
     STATUS_CHOICES = [
@@ -170,13 +172,14 @@ class Milestone(models.Model):
         ('completed', 'Completed'),
     ]
 
-    workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, related_name="milestones")
+    workstream = models.ForeignKey('Workstream', on_delete=models.CASCADE, related_name="milestones")
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     deadline = models.DateField(db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started', db_index=True)
     completed_date = models.DateField(null=True, blank=True)
-    strategic_goals = models.ManyToManyField(StrategicGoal, related_name="associated_milestones", blank=True)
+    strategic_goals = models.ManyToManyField('StrategicGoal', related_name="associated_milestones", blank=True)
+    
     objects = MilestoneQuerySet.as_manager()
 
     def __str__(self):
@@ -189,7 +192,15 @@ class Milestone(models.Model):
             self.completed_date = None
         super().save(*args, **kwargs)
 
-    def get_progress(self):
+    @property
+    def current_progress(self):
+        """
+        Returns the progress of the milestone.
+        Uses annotated value if available, otherwise calculates it.
+        """
+        if hasattr(self, 'calculated_progress'):
+            return self.calculated_progress
+            
         activities = self.activities.all()
         if not activities.exists():
             return 0
@@ -210,12 +221,65 @@ class Milestone(models.Model):
             return 'next_year'
         return 'future'
 
-    current_progress = property(get_progress)
-
     class Meta:
         verbose_name = "Milestone"
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
+
+# class Milestone(models.Model):
+#     """Progress tracking milestone"""
+#     STATUS_CHOICES = [
+#         ('not_started', 'Not Started'),
+#         ('in_progress', 'In Progress'),
+#         ('completed', 'Completed'),
+#     ]
+
+#     workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, related_name="milestones")
+#     name = models.CharField(max_length=255)
+#     description = models.TextField(blank=True, null=True)
+#     deadline = models.DateField(db_index=True)
+#     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started', db_index=True)
+#     completed_date = models.DateField(null=True, blank=True)
+#     strategic_goals = models.ManyToManyField(StrategicGoal, related_name="associated_milestones", blank=True)
+#     objects = MilestoneQuerySet.as_manager()
+
+#     def __str__(self):
+#         return f"{self.workstream.name} - {self.name}"
+
+#     def save(self, *args, **kwargs):
+#         if self.status == 'completed' and not self.completed_date:
+#             self.completed_date = timezone.now().date()
+#         elif self.status != 'completed' and self.completed_date:
+#             self.completed_date = None
+#         super().save(*args, **kwargs)
+
+#     def get_progress(self):
+#         activities = self.activities.all()
+#         if not activities.exists():
+#             return 0
+#         completed = activities.filter(status='completed').count()
+#         return int((completed / activities.count()) * 100)
+
+#     def timeframe_category(self):
+#         today = timezone.now().date()
+#         delta = (self.deadline - today).days
+        
+#         if delta < 0:
+#             return 'overdue'
+#         elif delta <= 30:
+#             return 'next_30_days'
+#         elif delta <= 90:
+#             return 'next_quarter'
+#         elif delta <= 365:
+#             return 'next_year'
+#         return 'future'
+
+#     current_progress = property(get_progress)
+
+#     class Meta:
+#         verbose_name = "Milestone"
+#         verbose_name_plural = "Milestones"
+#         ordering = ["deadline"]
 
 class MilestoneContributor(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="contributors")
