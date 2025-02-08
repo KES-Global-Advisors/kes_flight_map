@@ -20,7 +20,7 @@ class StrategicGoalSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         rep['strategy'] = {
             'id': instance.strategy.id,
-            'name': instance.strategy.strategy
+            'name': instance.strategy.name
         }
         return rep
     
