@@ -209,7 +209,7 @@ class RoadmapSerializer(serializers.ModelSerializer):
 class DashboardMilestoneSerializer(serializers.ModelSerializer):
     program = serializers.CharField(source='workstream.program.name', read_only=True)
     strategy = serializers.CharField(source='workstream.program.strategy.name', read_only=True)
-    timeframe_category = serializers.CharField(source='timeframe_category')
+    timeframe_category = serializers.CharField()
     contributors = serializers.SerializerMethodField()
 
     class Meta:
