@@ -153,9 +153,6 @@ class Workstream(models.Model):
 
     def get_contributors(self):
          return self.workstream_leads.all() | self.team_members.all()
-        # return User.objects.filter(
-        #     Q(workstream_leads=self) | Q(workstream_team_members=self)
-        # ).distinct()
 
     
     class Meta:
@@ -225,61 +222,6 @@ class Milestone(models.Model):
         verbose_name = "Milestone"
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
-
-# class Milestone(models.Model):
-#     """Progress tracking milestone"""
-#     STATUS_CHOICES = [
-#         ('not_started', 'Not Started'),
-#         ('in_progress', 'In Progress'),
-#         ('completed', 'Completed'),
-#     ]
-
-#     workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, related_name="milestones")
-#     name = models.CharField(max_length=255)
-#     description = models.TextField(blank=True, null=True)
-#     deadline = models.DateField(db_index=True)
-#     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started', db_index=True)
-#     completed_date = models.DateField(null=True, blank=True)
-#     strategic_goals = models.ManyToManyField(StrategicGoal, related_name="associated_milestones", blank=True)
-#     objects = MilestoneQuerySet.as_manager()
-
-#     def __str__(self):
-#         return f"{self.workstream.name} - {self.name}"
-
-#     def save(self, *args, **kwargs):
-#         if self.status == 'completed' and not self.completed_date:
-#             self.completed_date = timezone.now().date()
-#         elif self.status != 'completed' and self.completed_date:
-#             self.completed_date = None
-#         super().save(*args, **kwargs)
-
-#     def get_progress(self):
-#         activities = self.activities.all()
-#         if not activities.exists():
-#             return 0
-#         completed = activities.filter(status='completed').count()
-#         return int((completed / activities.count()) * 100)
-
-#     def timeframe_category(self):
-#         today = timezone.now().date()
-#         delta = (self.deadline - today).days
-        
-#         if delta < 0:
-#             return 'overdue'
-#         elif delta <= 30:
-#             return 'next_30_days'
-#         elif delta <= 90:
-#             return 'next_quarter'
-#         elif delta <= 365:
-#             return 'next_year'
-#         return 'future'
-
-#     current_progress = property(get_progress)
-
-#     class Meta:
-#         verbose_name = "Milestone"
-#         verbose_name_plural = "Milestones"
-#         ordering = ["deadline"]
 
 class MilestoneContributor(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="contributors")
