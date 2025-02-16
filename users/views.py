@@ -225,17 +225,7 @@ class RegisterView(APIView):
             serializer.save()
             return Response({'message': 'User registered successfully!'}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# class PasswordResetView(APIView):
-#     @method_decorator(ratelimit(key='post:email', rate='5/h', method='POST'))
-#     @method_decorator(csrf_protect)
-#     def post(self, request):
-#         serializer = PasswordResetSerializer(data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response({'message': 'Password reset email sent successfully!'}, status=status.HTTP_200_OK)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
 
 class PasswordResetView(APIView):
     def post(self, request):
@@ -301,4 +291,4 @@ class RoleListView(APIView):
 class AdminUserListView(ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
