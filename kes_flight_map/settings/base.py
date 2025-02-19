@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'flight_map.apps.FlightMapConfig',
     'tenants',
     'users',
+    'theme',
     'pytest_django',
     'rest_framework',
     'rest_framework_simplejwt',
