@@ -8,7 +8,8 @@ from .views import (
     StrategicGoalListCreateView, StrategicGoalRetrieveUpdateDestroyView,
     ProgramListCreateView, ProgramRetrieveUpdateDestroyView,
     WorkstreamListCreateView, WorkstreamRetrieveUpdateDestroyView,
-    DashboardMilestoneView,
+    DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
+    ResourceAllocationView,
 )
 
 router = DefaultRouter()
@@ -25,6 +26,11 @@ urlpatterns = [
     path('dashboard/milestones/', DashboardMilestoneView.as_view(), name='dashboard-milestones'),
     path('contributions/', EmployeeContributionsView.as_view(), name='employee-contributions'),
     path('strategic-alignment/', StrategicAlignmentView.as_view(), name='strategic-alignment'),
+
+    # Analysis endpoints
+    path('dashboard/trends/', TrendAnalysisView.as_view(), name='trend-analysis'),
+    path('dashboard/risks/', RiskAssessmentView.as_view(), name='risk-assessment'),
+    path('dashboard/workloads/', ResourceAllocationView.as_view(), name='resource-allocation'),
     
     # Original CBV endpoints
     path('strategies/', StrategyListCreateView.as_view(), name='strategy-list-create'),

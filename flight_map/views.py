@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from django.db.models import Prefetch, Count, Q, F, Case, When, Value, IntegerField, FloatField, CharField, Avg
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
@@ -368,7 +369,6 @@ class StrategicAlignmentView(APIView):
         })
 
 
-# views.py
 class DashboardMilestoneView(generics.ListAPIView):
     """
     GET: List milestones in dashboard format
@@ -392,3 +392,153 @@ class DashboardMilestoneView(generics.ListAPIView):
         return Milestone.objects.annotate_progress().filter(
             workstream__program__strategy__roadmap__owner=self.request.user
         ).select_related('workstream__program__strategy')
+
+
+# New views for data analysis
+class TrendAnalysisView(APIView):
+    """
+    Returns trend data showing daily counts of completed vs. in-progress activities
+    for a given time range (default: last 30 days). You can pass an optional query
+    parameter 'time_range' (in days) to adjust the range.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Default time range is 30 days unless specified in query params
+        try:
+            time_range = int(request.query_params.get('time_range', 30))
+        except ValueError:
+            time_range = 30
+
+        today = timezone.now().date()
+        start_date = today - timedelta(days=time_range)
+
+        # Get completed activities by their completion date within the range.
+        completed_qs = Activity.objects.filter(
+            status='completed',
+            completed_date__range=(start_date, today)
+        ).annotate(day=TruncDate('completed_date')).values('day').annotate(count=Count('id'))
+
+        # Get in-progress activities by their target end date within the range.
+        in_progress_qs = Activity.objects.filter(
+            status='in_progress',
+            target_end_date__range=(start_date, today)
+        ).annotate(day=TruncDate('target_end_date')).values('day').annotate(count=Count('id'))
+
+        # Convert queryset results into dictionaries keyed by date.
+        completed_dict = {entry['day']: entry['count'] for entry in completed_qs}
+        in_progress_dict = {entry['day']: entry['count'] for entry in in_progress_qs}
+
+        # Build trend data for each day in the range.
+        trend_data = []
+        current_day = start_date
+        while current_day <= today:
+            trend_data.append({
+                'date': current_day.isoformat(),
+                'completed': completed_dict.get(current_day, 0),
+                'in_progress': in_progress_dict.get(current_day, 0)
+            })
+            current_day += timedelta(days=1)
+
+        return Response(trend_data)
+
+
+class RiskAssessmentView(APIView):
+    """
+    Analyzes milestones (that are not yet completed) and returns a risk metric for each.
+    Risk is determined based on the milestone's deadline, current progress, and activity delays.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.now().date()
+        # Select milestones for roadmaps owned by the current user that are not completed.
+        milestones = Milestone.objects.filter(
+            workstream__program__strategy__roadmap__owner=request.user,
+            status__in=['not_started', 'in_progress']
+        )
+
+        risks = []
+        for milestone in milestones:
+            # Use the milestone property (or annotation) for current progress.
+            progress = milestone.current_progress
+            total_activities = milestone.activities.count()
+            overdue_activities = milestone.activities.filter(
+                status__in=['not_started', 'in_progress'],
+                target_end_date__lt=today
+            ).count()
+            delay_probability = (overdue_activities / total_activities * 100) if total_activities > 0 else 0
+
+            # Determine risk level
+            if milestone.deadline < today:
+                risk_level = 'high'
+            elif (milestone.deadline - today).days <= 7 and progress < 50:
+                risk_level = 'medium'
+            elif progress < 75:
+                risk_level = 'low'
+            else:
+                risk_level = 'low'
+
+            # Identify contributing factors.
+            factors = []
+            if milestone.deadline < today:
+                factors.append("Deadline passed")
+            if progress < 50:
+                factors.append("Low progress")
+            if delay_probability > 50:
+                factors.append("Many overdue tasks")
+
+            risks.append({
+                'milestone_id': milestone.id,
+                'name': milestone.name,
+                'risk_level': risk_level,
+                'factors': factors,
+                'delay_probability': round(delay_probability, 2)
+            })
+
+        return Response(risks)
+
+
+class ResourceAllocationView(APIView):
+    """
+    Returns workload distribution for team members involved in roadmaps owned by the
+    current user. For each user, it provides counts of current, upcoming, and overdue tasks.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.now().date()
+        # Filter users associated with activities in roadmaps owned by the current user.
+        users = User.objects.filter(
+            Q(activitycontributor__activity__workstream__program__strategy__roadmap__owner=request.user)
+        ).distinct().annotate(
+            current_tasks=Count(
+                'activitycontributor',
+                filter=Q(activitycontributor__activity__status='in_progress')
+            ),
+            upcoming_tasks=Count(
+                'activitycontributor',
+                filter=Q(
+                    activitycontributor__activity__status='not_started',
+                    activitycontributor__activity__target_start_date__gt=today
+                )
+            ),
+            overdue_tasks=Count(
+                'activitycontributor',
+                filter=Q(
+                    activitycontributor__activity__status__in=['not_started', 'in_progress'],
+                    activitycontributor__activity__target_end_date__lt=today
+                )
+            )
+        )
+
+        workload_data = []
+        for user in users:
+            workload_data.append({
+                'user': user.username,
+                'current_tasks': user.current_tasks,
+                'upcoming_tasks': user.upcoming_tasks,
+                'overdue_tasks': user.overdue_tasks
+            })
+
+        return Response(workload_data)
