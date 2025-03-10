@@ -5,12 +5,14 @@ from .views import (
     PasswordUpdateView,
     RoleAssignmentView,
     RoleListView,
-    AdminUserListView,
+    UserListView,
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
     LogoutView,
     GetCSRFToken,
     CurrentUserView,
+    UserUpdateView,
+    UserDetailView,
 )
 
 urlpatterns = [
@@ -32,6 +34,8 @@ urlpatterns = [
     path('assign-role/<int:pk>/', RoleAssignmentView.as_view(), name='assign-role'),
 
     # User Management
-    path('', AdminUserListView.as_view(), name='user-list'),
+    path('', UserListView.as_view(), name='user-list'),
+    path('<int:pk>/', UserDetailView.as_view(), name='user-detail'),
+    path('<int:pk>/update/', UserUpdateView.as_view(), name='user-update'),
     path('me/', CurrentUserView.as_view(), name='current-user'),
 ]

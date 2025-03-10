@@ -20,9 +20,10 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="default-secret-key")
 # Application definition
 INSTALLED_APPS = [
     # My apps
-    'flight_map',
+    'flight_map.apps.FlightMapConfig',
     'tenants',
     'users',
+    'theme',
     'pytest_django',
     'rest_framework',
     'rest_framework_simplejwt',
