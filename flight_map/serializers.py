@@ -26,7 +26,8 @@ class StrategicGoalSerializer(serializers.ModelSerializer):
     
 
 class ContributorSerializer(serializers.ModelSerializer):
-    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    # user = serializers.PrimaryKeyRelatedField(read_only=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
 
@@ -36,10 +37,34 @@ class ContributorSerializer(serializers.ModelSerializer):
 class MilestoneContributorSerializer(ContributorSerializer):
     class Meta(ContributorSerializer.Meta):
         model = MilestoneContributor
+        fields = ['milestone', 'user']
+        extra_kwargs = {
+            'user': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        # Automatically set the user to the authenticated user if not provided
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            validated_data['user'] = request.user
+        return super().create(validated_data)
+
 
 class ActivityContributorSerializer(ContributorSerializer):
     class Meta(ContributorSerializer.Meta):
         model = ActivityContributor
+        fields = ['activity', 'user']
+        extra_kwargs = {
+            'user': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        # Automatically set the user to the authenticated user if not provided
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            validated_data['user'] = request.user
+        return super().create(validated_data)
+
 
 class ActivitySerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Activity.STATUS_CHOICES)
