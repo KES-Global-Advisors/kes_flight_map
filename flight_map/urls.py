@@ -9,7 +9,8 @@ from .views import (
     ProgramListCreateView, ProgramRetrieveUpdateDestroyView,
     WorkstreamListCreateView, WorkstreamRetrieveUpdateDestroyView,
     DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
-    ResourceAllocationView,
+    ResourceAllocationView, MilestoneContributorCreateView,
+    ActivityContributorCreateView,
 )
 
 router = DefaultRouter()
@@ -44,4 +45,8 @@ urlpatterns = [
     
     path('workstreams/', WorkstreamListCreateView.as_view(), name='workstream-list-create'),
     path('workstreams/<int:pk>/', WorkstreamRetrieveUpdateDestroyView.as_view(), name='workstream-detail'),
+
+    # Contributors
+    path('milestone-contributors/', MilestoneContributorCreateView.as_view(), name='milestone-contributor-create'),
+    path('activity-contributors/', ActivityContributorCreateView.as_view(), name='activity-contributor-create'),
 ]
