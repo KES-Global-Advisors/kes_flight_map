@@ -177,6 +177,15 @@ class Milestone(models.Model):
     completed_date = models.DateField(null=True, blank=True)
     strategic_goals = models.ManyToManyField('StrategicGoal', related_name="associated_milestones", blank=True)
     
+    # NEW: Allow a milestone to depend on other milestones.
+    dependencies = models.ManyToManyField(
+        "self",
+        symmetrical=False,
+        related_name="dependent_milestones",
+        blank=True,
+        help_text="Milestones that must be completed before this milestone can be achieved."
+    )
+
     objects = MilestoneQuerySet.as_manager()
 
     def __str__(self):
@@ -223,6 +232,7 @@ class Milestone(models.Model):
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
 
+
 class MilestoneContributor(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="contributors")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -238,7 +248,7 @@ class Activity(models.Model):
         ('completed', 'Completed'),
     ]
 
-    workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, related_name="activities")
+    workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
     milestone = models.ForeignKey(Milestone, on_delete=models.SET_NULL, null=True, blank=True, related_name="activities")
     name = models.CharField(max_length=255)
     priority = models.IntegerField(choices=[(1, "High"), (2, "Medium"), (3, "Low")])
