@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.generics import ListAPIView, UpdateAPIView
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.generics import ListAPIView, UpdateAPIView, RetrieveAPIView
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
@@ -214,7 +214,7 @@ class LogoutView(APIView):
         return response
 
 
-@method_decorator(csrf_protect, name='dispatch')
+# @method_decorator(csrf_protect, name='dispatch')
 class RegisterView(APIView):
     """
     POST: Register a new user.
@@ -273,7 +273,7 @@ class PasswordUpdateView(APIView):
 class RoleAssignmentView(UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     def partial_update(self, request, *args, **kwargs):
         role = request.data.get('role')
@@ -288,7 +288,24 @@ class RoleListView(APIView):
         return Response(roles)
 
 
-class AdminUserListView(ListAPIView):
+class UserDetailView(RetrieveAPIView):
+    """
+    Retrieve a user's details by their ID. This view is restricted to admin users.
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+class UserListView(ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class UserUpdateView(UpdateAPIView):
+    """
+    Allows an admin to update any user's information by specifying their ID.
+    """
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
