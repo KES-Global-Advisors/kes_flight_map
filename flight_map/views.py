@@ -11,7 +11,8 @@ from django.core.cache import cache
 from datetime import timedelta
 from .models import (
     Roadmap, Strategy, Program, Workstream,
-    Milestone, Activity, StrategicGoal
+    Milestone, Activity, StrategicGoal,
+    MilestoneContributor, ActivityContributor
 )
 from .serializers import (
     RoadmapSerializer, StrategySerializer,
@@ -19,7 +20,8 @@ from .serializers import (
     MilestoneSerializer, ActivitySerializer,
     DashboardMilestoneSerializer, EmployeeContributionSerializer,
     MilestoneStatusSerializer, ActivityStatusSerializer,
-    StrategicGoalSerializer
+    StrategicGoalSerializer, MilestoneContributorSerializer,
+    ActivityContributorSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
@@ -304,7 +306,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Activity.objects.annotate_delay().filter(
-            workstream__program__strategy__roadmap__owner=self.request.user
+            Q(workstream__program__strategy__roadmap__owner=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user)
         ).select_related('milestone', 'workstream')
 
     @action(detail=True, methods=['patch'])
@@ -542,3 +545,31 @@ class ResourceAllocationView(APIView):
             })
 
         return Response(workload_data)
+
+class MilestoneContributorCreateView(generics.CreateAPIView):
+    """
+    API endpoint to create a MilestoneContributor.
+    Expects JSON payload with 'milestone' and 'user' fields.
+    """
+    queryset = MilestoneContributor.objects.all()
+    serializer_class = MilestoneContributorSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ActivityContributorCreateView(generics.CreateAPIView):
+    """
+    API endpoint to create an ActivityContributor.
+    Expects JSON payload with 'activity' and 'user' fields.
+    """
+    queryset = ActivityContributor.objects.all()
+    serializer_class = ActivityContributorSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
