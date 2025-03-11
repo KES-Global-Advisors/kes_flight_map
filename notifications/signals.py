@@ -1,5 +1,5 @@
 # notifications/signals.py
-from django.db.models.signals import post_save, m2m_changed
+from django.db.models.signals import pre_save, post_save, m2m_changed
 from django.dispatch import receiver
 from flight_map.models import Roadmap, Activity, Milestone, Strategy, Program, Workstream
 from .models import Notification
@@ -26,16 +26,22 @@ def notify_roadmap_created(sender, instance, created, **kwargs):
         notify_admin_manager(message, link, actor=instance.owner)
 
 # --- Activity Status Change Notification ---
+@receiver(pre_save, sender=Activity)
+def capture_activity_old_status(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            old_instance = Activity.objects.get(pk=instance.pk)
+            instance._old_status = old_instance.status
+        except Activity.DoesNotExist:
+            instance._old_status = None
+    else:
+        instance._old_status = None
+
 @receiver(post_save, sender=Activity)
 def notify_activity_status_change(sender, instance, created, **kwargs):
-    # Only trigger on updates (not creation)
     if not created:
-        try:
-            previous = Activity.objects.get(pk=instance.pk)
-        except Activity.DoesNotExist:
-            previous = None
-        if previous and previous.status != instance.status:
-            # Here we assume the view sets an 'updated_by' attribute on the instance.
+        old_status = getattr(instance, '_old_status', None)
+        if old_status is not None and old_status != instance.status:
             actor = getattr(instance, 'updated_by', None)
             if instance.status == 'in_progress':
                 message = f"{actor.username if actor else 'Someone'} marked {instance.name} as in progress"
@@ -46,24 +52,34 @@ def notify_activity_status_change(sender, instance, created, **kwargs):
             link = f"/activities/{instance.id}/"
             notify_admin_manager(message, link, actor=actor)
 
+
 # --- Milestone Status Change Notification ---
+@receiver(pre_save, sender=Milestone)
+def capture_milestone_old_status(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            old_instance = Milestone.objects.get(pk=instance.pk)
+            instance._old_status = old_instance.status
+        except Milestone.DoesNotExist:
+            instance._old_status = None
+    else:
+        instance._old_status = None
+
 @receiver(post_save, sender=Milestone)
 def notify_milestone_status_change(sender, instance, created, **kwargs):
     if not created:
-        try:
-            previous = Milestone.objects.get(pk=instance.pk)
-        except Milestone.DoesNotExist:
-            previous = None
-        if previous and previous.status != instance.status:
+        old_status = getattr(instance, '_old_status', None)
+        if old_status is not None and old_status != instance.status:
             actor = getattr(instance, 'updated_by', None)
-            if instance.status == 'in_progress':
-                message = f"{actor.username if actor else 'Someone'} marked {instance.name} as in progress"
-            elif instance.status == 'completed':
+            if instance.status == 'completed':
                 message = f"{actor.username if actor else 'Someone'} completed {instance.name}"
+            elif instance.status == 'in_progress':
+                message = f"{actor.username if actor else 'Someone'} marked {instance.name} as in progress"
             else:
                 message = f"{actor.username if actor else 'Someone'} updated {instance.name} to {instance.status}"
             link = f"/milestones/{instance.id}/"
             notify_admin_manager(message, link, actor=actor)
+
 
 # --- Membership Notifications via m2m_changed ---
 # For Strategy: executive_sponsors, strategy_leads, communication_leads
