@@ -64,3 +64,11 @@ def mark_all_read(request):
     # Mark all unread notifications for the authenticated user as read.
     Notification.objects.filter(recipient=request.user, read=False).update(read=True)
     return Response({'status': 'success', 'message': 'All notifications marked as read.'})
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def clear_notifications(request):
+    # Delete all notifications for the current user.
+    deleted_count, _ = Notification.objects.filter(recipient=request.user).delete()
+    return Response({'status': 'success', 'message': f'{deleted_count} notifications cleared.'})
