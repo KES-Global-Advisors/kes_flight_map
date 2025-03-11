@@ -78,6 +78,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'flight_map.current_user_middleware.CurrentUserMiddleware',
 ]
 
 ROOT_URLCONF = 'kes_flight_map.urls'
