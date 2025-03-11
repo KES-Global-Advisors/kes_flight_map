@@ -43,11 +43,16 @@ class MilestoneContributorSerializer(ContributorSerializer):
         }
 
     def create(self, validated_data):
-        # Automatically set the user to the authenticated user if not provided
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request and request.user and request.user.is_authenticated:
-            validated_data['user'] = request.user
-        return super().create(validated_data)
+            validated_data["user"] = request.user
+        milestone = validated_data.get("milestone")
+        user = validated_data.get("user")
+        contributor, _ = MilestoneContributor.objects.get_or_create(
+            milestone=milestone,
+            user=user
+        )
+        return contributor
 
 
 class ActivityContributorSerializer(ContributorSerializer):
@@ -59,20 +64,17 @@ class ActivityContributorSerializer(ContributorSerializer):
         }
 
     def create(self, validated_data):
-        # Automatically set the user to the authenticated user if not provided
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request and request.user and request.user.is_authenticated:
-            validated_data['user'] = request.user
-
-        # Check if a record already exists for this activity and user.
+            validated_data["user"] = request.user
         activity = validated_data.get("activity")
         user = validated_data.get("user")
-        existing = ActivityContributor.objects.filter(activity=activity, user=user).first()
-        if existing:
-            # Record exists, so just return it without creating a new one.
-            return existing
+        contributor, _ = ActivityContributor.objects.get_or_create(
+            activity=activity,
+            user=user
+        )
+        return contributor
 
-        return super().create(validated_data)
 
 
 class ActivitySerializer(serializers.ModelSerializer):

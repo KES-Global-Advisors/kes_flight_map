@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.generics import ListAPIView, UpdateAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
@@ -26,6 +26,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from kes_flight_map.settings import base as settings
 from kes_flight_map.tasks import send_password_reset_email
 import logging
+from .throttles import UsernameLoginThrottle
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -67,12 +68,14 @@ class GetCSRFToken(APIView):
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Custom view to obtain JWT token pairs (access and refresh tokens).
-    This view also includes CSRF protection and rate limiting to prevent brute force attacks.
+    This view also includes CSRF protection. 
+    Rate limiting is handled by DRF's built-in throttling (see UsernameLoginThrottle).
     """
     serializer_class = CustomTokenObtainPairSerializer
     authentication_classes = []  # Disable default session/auth classes
+    permission_classes = [AllowAny]
+    throttle_classes = [UsernameLoginThrottle]  # or [AnonRateThrottle, UsernameLoginThrottle] if desired
 
-    @method_decorator(ratelimit(key='post:username', rate='3/h', method='POST')) 
     def post(self, request, *args, **kwargs):
         # Check CSRF token presence
         csrf_token = request.headers.get('X-CSRFToken')
@@ -82,39 +85,23 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        serializer = self.get_serializer(data=request.data)
-        email = request.data.get('email')
+        # Extract username (or email) from request data if you need it for logging
+        username = request.data.get('username')  # or 'email' if your payload uses "email"
 
+        # Validate credentials with your serializer
+        serializer = self.get_serializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
         except TokenError as e:
-            logger.warning(f"Token error for {email}: {str(e)}")
+            logger.warning(f"Token error for {username}: {str(e)}")
             raise InvalidToken(e.args[0])
 
+        # On success, retrieve tokens
         access = serializer.validated_data.get('access')
         refresh = serializer.validated_data.get('refresh')
 
-        # Handle brute force detection
-        was_limited = getattr(request, 'limited', False)
-        if was_limited:
-            logger.warning(f"Brute force attempt detected for {email}")
-            try:
-                user = User.objects.get(email=email)
-                user.failed_attempts += 1
-                user.save()
-            except User.DoesNotExist:
-                pass
-            return Response(
-                {'detail': 'Too many login attempts. Please reset your password.'},
-                status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
-
-        # Create a response with secure HTTP-only cookie for refresh token
-        response = Response(
-            {'access': access},
-            status=status.HTTP_200_OK
-        )
-        
+        # Create a response with an HTTP-only cookie for the refresh token
+        response = Response({'access': access}, status=status.HTTP_200_OK)
         response.set_cookie(
             key='refresh_token',
             value=refresh,
@@ -124,10 +111,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             max_age=60 * 60 * 24 * 7  # 7 days
         )
 
-        # Return the CSRF token in the response
+        # Return a fresh CSRF token in the response
         response.data['csrf_token'] = get_token(request)
         return response
-
 
 class CustomTokenRefreshView(TokenRefreshView):
     """

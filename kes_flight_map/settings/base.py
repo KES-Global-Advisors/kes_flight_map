@@ -141,25 +141,46 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Logging configuration
 import os
+import logging
 
 LOGS_DIR = BASE_DIR / 'logs'
 os.makedirs(LOGS_DIR, exist_ok=True)
 
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] [{levelname}] {name}: {message}',
+            'style': '{',  # allows using {message} instead of %s
+        },
+    },
     'handlers': {
-        'file': {
-            'level': 'ERROR',
+        'file_all': {
+            'level': 'DEBUG',  # capture all messages >= DEBUG
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'app.log',  # or 'debug.log' if you prefer
+            'formatter': 'verbose',
+        },
+        'file_errors': {
+            'level': 'ERROR',  # capture all messages >= ERROR
             'class': 'logging.FileHandler',
             'filename': LOGS_DIR / 'errors.log',
+            'formatter': 'verbose',
         },
     },
     'loggers': {
+        # The root logger '' catches everything in your project
+        '': {
+            'handlers': ['file_all'],
+            'level': 'DEBUG',     # or 'INFO' if you only want info+ logs
+            'propagate': True,    # allow logs to propagate to other loggers
+        },
         'django': {
-            'handlers': ['file'],
-            'level': 'ERROR',
-            'propagate': True,
+            'handlers': ['file_errors'],
+            'level': 'ERROR',     # capture all messages >= ERROR
+            'propagate': False,   # don't propagate to the root logger
         },
     },
 }
@@ -167,8 +188,13 @@ LOGGING = {
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        # 'rest_framework.authentication.SessionAuthentication',
-    ]
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'users.throttles.UsernameLoginThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '10/hour',  # or whatever you want
+    },
 }
 
 AUTH_USER_MODEL = 'users.CustomUser'
