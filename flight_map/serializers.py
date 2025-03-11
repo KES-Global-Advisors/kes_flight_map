@@ -63,6 +63,15 @@ class ActivityContributorSerializer(ContributorSerializer):
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
             validated_data['user'] = request.user
+
+        # Check if a record already exists for this activity and user.
+        activity = validated_data.get("activity")
+        user = validated_data.get("user")
+        existing = ActivityContributor.objects.filter(activity=activity, user=user).first()
+        if existing:
+            # Record exists, so just return it without creating a new one.
+            return existing
+
         return super().create(validated_data)
 
 
@@ -127,6 +136,14 @@ class ActivitySerializer(serializers.ModelSerializer):
                 )
 
         return data
+    
+    def update(self, instance, validated_data):
+        # Always update the updated_by field to the current user from the request context
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            instance.updated_by = request.user
+        return super().update(instance, validated_data)
+
 
 class MilestoneSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Milestone.STATUS_CHOICES)
@@ -154,6 +171,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
         if data.get('status') == 'completed' and not data.get('completed_date'):
             data['completed_date'] = timezone.now().date()
         return data
+
+    def update(self, instance, validated_data):
+        # Always update the updated_by field to the current user from the request context
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            instance.updated_by = request.user
+        return super().update(instance, validated_data)
 
 class WorkstreamSerializer(serializers.ModelSerializer):
     milestones = MilestoneSerializer(many=True, read_only=True)
