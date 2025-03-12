@@ -120,10 +120,21 @@ class RoadmapViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Roadmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
-                    queryset=Milestone.objects.annotate_progress()),
+                     queryset=Milestone.objects.annotate_progress()),
             Prefetch('strategies__programs__workstreams__activities',
-                    queryset=Activity.objects.annotate_delay())
-        ).filter(owner=self.request.user)
+                     queryset=Activity.objects.annotate_delay())
+        ).filter(
+            Q(owner=self.request.user) |
+            Q(strategies__executive_sponsors=self.request.user) |
+            Q(strategies__strategy_leads=self.request.user) |
+            Q(strategies__communication_leads=self.request.user) |
+            Q(strategies__programs__executive_sponsors=self.request.user) |
+            Q(strategies__programs__program_leads=self.request.user) |
+            Q(strategies__programs__workforce_sponsors=self.request.user) |
+            Q(strategies__programs__workstreams__workstream_leads=self.request.user) |
+            Q(strategies__programs__workstreams__team_members=self.request.user)
+        ).distinct()
+
 
     @action(detail=True, methods=['get'])
     def timeline(self, request, pk=None):
