@@ -22,4 +22,5 @@ urlpatterns = [
     path('', include('flight_map.urls')),
     path('', include('theme.urls')),
     path('users/', include('users.urls')),
+    path('notifications/', include('notifications.urls')),
 ]

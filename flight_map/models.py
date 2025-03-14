@@ -8,6 +8,7 @@ from django.db.models import (
     DurationField, Count, Q
 )
 from django.db.models.functions import ExtractDay, Greatest
+from .current_user_middleware import get_current_user
 
 User = get_user_model()
 
@@ -185,6 +186,14 @@ class Milestone(models.Model):
         blank=True,
         help_text="Milestones that must be completed before this milestone can be achieved."
     )
+    # capture who updated this milestone
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_milestones"
+    )
 
     objects = MilestoneQuerySet.as_manager()
 
@@ -192,6 +201,7 @@ class Milestone(models.Model):
         return f"{self.workstream.name} - {self.name}"
 
     def save(self, *args, **kwargs):
+        # Automatically set completed_date if status is completed and not already set        
         if self.status == 'completed' and not self.completed_date:
             self.completed_date = timezone.now().date()
         elif self.status != 'completed' and self.completed_date:
@@ -273,10 +283,20 @@ class Activity(models.Model):
     target_start_date = models.DateField()
     target_end_date = models.DateField(db_index=True)
 
+    # New field to capture who updated this activity
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_activities"
+    )
+
     def __str__(self):
         return self.name
 
     def save(self, *args, **kwargs):
+        # Automatically set completed_date if status is completed and not already set
         if self.status == 'completed' and not self.completed_date:
             self.completed_date = timezone.now().date()
         elif self.status != 'completed' and self.completed_date:
