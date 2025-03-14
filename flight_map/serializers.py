@@ -43,11 +43,16 @@ class MilestoneContributorSerializer(ContributorSerializer):
         }
 
     def create(self, validated_data):
-        # Automatically set the user to the authenticated user if not provided
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request and request.user and request.user.is_authenticated:
-            validated_data['user'] = request.user
-        return super().create(validated_data)
+            validated_data["user"] = request.user
+        milestone = validated_data.get("milestone")
+        user = validated_data.get("user")
+        contributor, _ = MilestoneContributor.objects.get_or_create(
+            milestone=milestone,
+            user=user
+        )
+        return contributor
 
 
 class ActivityContributorSerializer(ContributorSerializer):
@@ -59,11 +64,17 @@ class ActivityContributorSerializer(ContributorSerializer):
         }
 
     def create(self, validated_data):
-        # Automatically set the user to the authenticated user if not provided
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request and request.user and request.user.is_authenticated:
-            validated_data['user'] = request.user
-        return super().create(validated_data)
+            validated_data["user"] = request.user
+        activity = validated_data.get("activity")
+        user = validated_data.get("user")
+        contributor, _ = ActivityContributor.objects.get_or_create(
+            activity=activity,
+            user=user
+        )
+        return contributor
+
 
 
 class ActivitySerializer(serializers.ModelSerializer):
@@ -127,6 +138,14 @@ class ActivitySerializer(serializers.ModelSerializer):
                 )
 
         return data
+    
+    def update(self, instance, validated_data):
+        # Always update the updated_by field to the current user from the request context
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            instance.updated_by = request.user
+        return super().update(instance, validated_data)
+
 
 class MilestoneSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Milestone.STATUS_CHOICES)
@@ -154,6 +173,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
         if data.get('status') == 'completed' and not data.get('completed_date'):
             data['completed_date'] = timezone.now().date()
         return data
+
+    def update(self, instance, validated_data):
+        # Always update the updated_by field to the current user from the request context
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            instance.updated_by = request.user
+        return super().update(instance, validated_data)
 
 class WorkstreamSerializer(serializers.ModelSerializer):
     milestones = MilestoneSerializer(many=True, read_only=True)
