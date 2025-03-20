@@ -85,6 +85,18 @@ class ActivitySerializer(serializers.ModelSerializer):
     actual_duration = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
 
+        # New fields to return additional links
+    supported_milestones = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        many=True,
+        required=False
+    )
+    additional_milestones = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        many=True,
+        required=False
+    )
+
     class Meta:
         model = Activity
         fields = '__all__'
