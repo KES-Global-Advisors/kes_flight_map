@@ -120,9 +120,9 @@ class RoadmapViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Roadmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
-                     queryset=Milestone.objects.annotate_progress()),
+                     queryset=Milestone.objects.annotate_progress().distinct()),
             Prefetch('strategies__programs__workstreams__activities',
-                     queryset=Activity.objects.annotate_delay())
+                     queryset=Activity.objects.annotate_delay().distinct())
         ).filter(
             Q(owner=self.request.user) |
             Q(strategies__executive_sponsors=self.request.user) |
@@ -262,10 +262,21 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         'workstream__program__strategy': ['exact']
     }
 
+
     def get_queryset(self):
+        user = self.request.user
         return Milestone.objects.annotate_progress().filter(
-            workstream__program__strategy__roadmap__owner=self.request.user
-        )
+            Q(workstream__program__strategy__roadmap__owner=user) |
+            Q(workstream__program__strategy__executive_sponsors=user) |
+            Q(workstream__program__strategy__strategy_leads=user) |
+            Q(workstream__program__strategy__communication_leads=user) |
+            Q(workstream__program__executive_sponsors=user) |
+            Q(workstream__program__program_leads=user) |
+            Q(workstream__program__workforce_sponsors=user) |
+            Q(workstream__workstream_leads=user) |
+            Q(workstream__team_members=user)
+        ).distinct()
+
 
 
     @action(detail=True, methods=['get'])
@@ -316,10 +327,36 @@ class ActivityViewSet(viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return Activity.objects.annotate_delay().filter(
-            Q(workstream__program__strategy__roadmap__owner=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user)
-        ).select_related('milestone', 'workstream')
+        return (
+            Activity.objects.annotate_delay()
+            .filter(
+                Q(workstream__program__strategy__roadmap__owner=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+                Q(workstream__program__executive_sponsors=self.request.user) |
+                Q(workstream__program__program_leads=self.request.user) |
+                Q(workstream__program__workforce_sponsors=self.request.user) |
+                Q(workstream__workstream_leads=self.request.user) |
+                Q(workstream__team_members=self.request.user) |
+                Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
+                Q(milestone__workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+                Q(milestone__workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+                Q(milestone__workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+                Q(milestone__workstream__program__executive_sponsors=self.request.user) |
+                Q(milestone__workstream__program__program_leads=self.request.user) |
+                Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
+                Q(milestone__workstream__workstream_leads=self.request.user) |
+                Q(milestone__workstream__team_members=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__programs__executive_sponsors=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__programs__program_leads=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
+                Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__team_members=self.request.user)
+            )
+            .select_related('milestone', 'workstream')
+            .prefetch_related('supported_milestones', 'additional_milestones')
+            .distinct()
+        )
 
     @action(detail=True, methods=['patch'])
     def update_status(self, request, pk=None):
