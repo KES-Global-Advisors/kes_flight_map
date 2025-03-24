@@ -262,10 +262,13 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         'workstream__program__strategy': ['exact']
     }
 
-
     def get_queryset(self):
+        base_qs = Milestone.objects.annotate_progress()
         user = self.request.user
-        return Milestone.objects.annotate_progress().filter(
+        # Related milestones: those that have a workstream and meet the user association criteria.
+        related_qs = base_qs.filter(
+            workstream__isnull=False
+        ).filter(
             Q(workstream__program__strategy__roadmap__owner=user) |
             Q(workstream__program__strategy__executive_sponsors=user) |
             Q(workstream__program__strategy__strategy_leads=user) |
@@ -275,9 +278,13 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             Q(workstream__program__workforce_sponsors=user) |
             Q(workstream__workstream_leads=user) |
             Q(workstream__team_members=user)
-        ).distinct()
-
-
+        )
+        # Standalone milestones: those without a workstream but with updated_by set.
+        standalone_qs = base_qs.filter(
+            workstream__isnull=True,
+            updated_by__isnull=False
+        )
+        return (related_qs | standalone_qs).distinct()
 
     @action(detail=True, methods=['get'])
     def insights(self, request, pk=None):
@@ -327,36 +334,45 @@ class ActivityViewSet(viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return (
-            Activity.objects.annotate_delay()
-            .filter(
-                Q(workstream__program__strategy__roadmap__owner=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
-                Q(workstream__program__executive_sponsors=self.request.user) |
-                Q(workstream__program__program_leads=self.request.user) |
-                Q(workstream__program__workforce_sponsors=self.request.user) |
-                Q(workstream__workstream_leads=self.request.user) |
-                Q(workstream__team_members=self.request.user) |
-                Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
-                Q(milestone__workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
-                Q(milestone__workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
-                Q(milestone__workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
-                Q(milestone__workstream__program__executive_sponsors=self.request.user) |
-                Q(milestone__workstream__program__program_leads=self.request.user) |
-                Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
-                Q(milestone__workstream__workstream_leads=self.request.user) |
-                Q(milestone__workstream__team_members=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__programs__executive_sponsors=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__programs__program_leads=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
-                Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__team_members=self.request.user)
-            )
-            .select_related('milestone', 'workstream')
-            .prefetch_related('supported_milestones', 'additional_milestones')
-            .distinct()
+        base_qs = Activity.objects.annotate_delay()
+
+        # Activities attached to a workstream or milestone.
+        related_qs = base_qs.filter(
+            Q(workstream__isnull=False) | Q(milestone__isnull=False)
+        ).filter(
+            Q(workstream__program__strategy__roadmap__owner=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(workstream__program__executive_sponsors=self.request.user) |
+            Q(workstream__program__program_leads=self.request.user) |
+            Q(workstream__program__workforce_sponsors=self.request.user) |
+            Q(workstream__workstream_leads=self.request.user) |
+            Q(workstream__team_members=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(milestone__workstream__program__executive_sponsors=self.request.user) |
+            Q(milestone__workstream__program__program_leads=self.request.user) |
+            Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
+            Q(milestone__workstream__workstream_leads=self.request.user) |
+            Q(milestone__workstream__team_members=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__program_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__team_members=self.request.user)
         )
+
+        # Standalone activities: no workstream or milestone, but with updated_by set.
+        standalone_qs = base_qs.filter(
+            workstream__isnull=True,
+            milestone__isnull=True,
+            updated_by__isnull=False
+        )
+
+        return (related_qs | standalone_qs).distinct()
+
 
     @action(detail=True, methods=['patch'])
     def update_status(self, request, pk=None):

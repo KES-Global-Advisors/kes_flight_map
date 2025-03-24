@@ -173,7 +173,7 @@ class Milestone(models.Model):
         ('completed', 'Completed'),
     ]
 
-    workstream = models.ForeignKey('Workstream', on_delete=models.CASCADE, related_name="milestones")
+    workstream = models.ForeignKey('Workstream', on_delete=models.CASCADE, null=True, blank=True, related_name="milestones")
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     deadline = models.DateField(db_index=True)
@@ -338,6 +338,8 @@ class Activity(models.Model):
             raise ValidationError("Target start date must be before end date")
         if self.completed_date and self.completed_date < self.target_start_date:
             raise ValidationError("Completion date cannot be before target start date")
+        if self.workstream is not None and self.milestone is not None:
+            raise ValidationError("An activity should not be both under a milestone and directly under a workstream")
     
 
     class Meta:
