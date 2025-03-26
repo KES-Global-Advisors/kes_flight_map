@@ -85,6 +85,18 @@ class ActivitySerializer(serializers.ModelSerializer):
     actual_duration = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
 
+        # New fields to return additional links
+    supported_milestones = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        many=True,
+        required=False
+    )
+    additional_milestones = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        many=True,
+        required=False
+    )
+
     class Meta:
         model = Activity
         fields = '__all__'
@@ -138,6 +150,16 @@ class ActivitySerializer(serializers.ModelSerializer):
                 )
 
         return data
+
+    def create(self, validated_data):
+        # If this is a standalone activity (no workstream and no milestone),
+        # mark it by setting updated_by to the current user.
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated:
+            if validated_data.get('workstream') is None and validated_data.get('milestone') is None:
+                validated_data['updated_by'] = request.user
+        return super().create(validated_data)
+
     
     def update(self, instance, validated_data):
         # Always update the updated_by field to the current user from the request context
@@ -166,7 +188,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
         model = Milestone
         fields = '__all__'
         extra_kwargs = {
-            'completed_date': {'read_only': True}
+            'completed_date': {'read_only': True},
+            'workstream': {'required': False, 'allow_null': True},
         }
 
     def validate(self, data):
@@ -174,8 +197,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
             data['completed_date'] = timezone.now().date()
         return data
 
+    def create(self, validated_data):
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated:
+            # If no workstream is provided, assume the milestone is standalone.
+            if validated_data.get('workstream') is None:
+                validated_data['updated_by'] = request.user
+        return super().create(validated_data)
+
     def update(self, instance, validated_data):
-        # Always update the updated_by field to the current user from the request context
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
             instance.updated_by = request.user
