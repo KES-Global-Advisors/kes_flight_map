@@ -149,6 +149,9 @@ class Workstream(models.Model):
     improvement_targets = models.JSONField(default=list)
     organizational_goals = models.JSONField(default=list)
 
+    # New field to capture the color of the workstream
+    color = models.CharField(max_length=7, default='#22d3ee')
+
     def __str__(self):
         return self.name
 
@@ -170,13 +173,14 @@ class Milestone(models.Model):
         ('completed', 'Completed'),
     ]
 
-    workstream = models.ForeignKey('Workstream', on_delete=models.CASCADE, related_name="milestones")
+    workstream = models.ForeignKey('Workstream', on_delete=models.CASCADE, null=True, blank=True, related_name="milestones")
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     deadline = models.DateField(db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started', db_index=True)
     completed_date = models.DateField(null=True, blank=True)
     strategic_goals = models.ManyToManyField('StrategicGoal', related_name="associated_milestones", blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     # NEW: Allow a milestone to depend on other milestones.
     dependencies = models.ManyToManyField(
@@ -241,6 +245,7 @@ class Milestone(models.Model):
         verbose_name = "Milestone"
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
+        unique_together = (("workstream", "name"),)
 
 
 class MilestoneContributor(models.Model):
@@ -266,7 +271,8 @@ class Activity(models.Model):
     completed_date = models.DateField(null=True, blank=True)
     actual_start_date = models.DateField(null=True, blank=True)
     delay_reason = models.TextField(blank=True)
-    objects = ActivityQuerySet.as_manager() 
+    objects = ActivityQuerySet.as_manager()
+    updated_at = models.DateTimeField(auto_now=True)
 
     # Relationships
     prerequisite_activities = models.ManyToManyField("self", symmetrical=False, related_name="prerequisite_for", blank=True)
@@ -290,6 +296,22 @@ class Activity(models.Model):
         null=True,
         blank=True,
         related_name="updated_activities"
+    )
+
+    # New field to capture which milestones this activity supports for cross‐workstream support
+    supported_milestones = models.ManyToManyField(
+        Milestone,
+        blank=True,
+        related_name="supported_by_activities",
+        help_text="Milestones (potentially in other workstreams) that this activity supports."
+    )
+
+    # New field to capture additional milestone connections for sequential/parallel or multiple milestone connections
+    additional_milestones = models.ManyToManyField(
+        Milestone,
+        blank=True,
+        related_name="additional_activities",
+        help_text="Extra milestone connections (for sequential/parallel relationships)."
     )
 
     def __str__(self):
@@ -316,6 +338,8 @@ class Activity(models.Model):
             raise ValidationError("Target start date must be before end date")
         if self.completed_date and self.completed_date < self.target_start_date:
             raise ValidationError("Completion date cannot be before target start date")
+        if self.workstream is not None and self.milestone is not None:
+            raise ValidationError("An activity should not be both under a milestone and directly under a workstream")
     
 
     class Meta:

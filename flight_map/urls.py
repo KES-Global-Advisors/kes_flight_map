@@ -10,7 +10,7 @@ from .views import (
     WorkstreamListCreateView, WorkstreamRetrieveUpdateDestroyView,
     DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
     ResourceAllocationView, MilestoneContributorCreateView,
-    ActivityContributorCreateView,
+    ActivityContributorCreateView, PerformanceDashboardView,
 )
 
 router = DefaultRouter()
@@ -25,6 +25,7 @@ urlpatterns = [
     # Dashboard endpoints
     path('dashboard/', ProgressDashboardView.as_view(), name='progress-dashboard'),
     path('dashboard/milestones/', DashboardMilestoneView.as_view(), name='dashboard-milestones'),
+    path('dashboard/performance/', PerformanceDashboardView.as_view(), name='performance-dashboard'),
     path('contributions/', EmployeeContributionsView.as_view(), name='employee-contributions'),
     path('strategic-alignment/', StrategicAlignmentView.as_view(), name='strategic-alignment'),
 

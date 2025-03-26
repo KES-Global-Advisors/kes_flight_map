@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
-from django.db.models import Prefetch, Count, Q, F, Case, When, Value, IntegerField, FloatField, CharField, Avg
+from django.db.models import Prefetch, Count, Q, F, Case, When, Value, IntegerField, FloatField, CharField, Avg, DurationField, ExpressionWrapper
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -120,9 +120,9 @@ class RoadmapViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Roadmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
-                     queryset=Milestone.objects.annotate_progress()),
+                     queryset=Milestone.objects.annotate_progress().distinct()),
             Prefetch('strategies__programs__workstreams__activities',
-                     queryset=Activity.objects.annotate_delay())
+                     queryset=Activity.objects.annotate_delay().distinct())
         ).filter(
             Q(owner=self.request.user) |
             Q(strategies__executive_sponsors=self.request.user) |
@@ -263,10 +263,28 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return Milestone.objects.annotate_progress().filter(
-            workstream__program__strategy__roadmap__owner=self.request.user
+        base_qs = Milestone.objects.annotate_progress()
+        user = self.request.user
+        # Related milestones: those that have a workstream and meet the user association criteria.
+        related_qs = base_qs.filter(
+            workstream__isnull=False
+        ).filter(
+            Q(workstream__program__strategy__roadmap__owner=user) |
+            Q(workstream__program__strategy__executive_sponsors=user) |
+            Q(workstream__program__strategy__strategy_leads=user) |
+            Q(workstream__program__strategy__communication_leads=user) |
+            Q(workstream__program__executive_sponsors=user) |
+            Q(workstream__program__program_leads=user) |
+            Q(workstream__program__workforce_sponsors=user) |
+            Q(workstream__workstream_leads=user) |
+            Q(workstream__team_members=user)
         )
-
+        # Standalone milestones: those without a workstream but with updated_by set.
+        standalone_qs = base_qs.filter(
+            workstream__isnull=True,
+            updated_by__isnull=False
+        )
+        return (related_qs | standalone_qs).distinct()
 
     @action(detail=True, methods=['get'])
     def insights(self, request, pk=None):
@@ -316,10 +334,45 @@ class ActivityViewSet(viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return Activity.objects.annotate_delay().filter(
+        base_qs = Activity.objects.annotate_delay()
+
+        # Activities attached to a workstream or milestone.
+        related_qs = base_qs.filter(
+            Q(workstream__isnull=False) | Q(milestone__isnull=False)
+        ).filter(
             Q(workstream__program__strategy__roadmap__owner=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user)
-        ).select_related('milestone', 'workstream')
+            Q(workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(workstream__program__executive_sponsors=self.request.user) |
+            Q(workstream__program__program_leads=self.request.user) |
+            Q(workstream__program__workforce_sponsors=self.request.user) |
+            Q(workstream__workstream_leads=self.request.user) |
+            Q(workstream__team_members=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
+            Q(milestone__workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(milestone__workstream__program__executive_sponsors=self.request.user) |
+            Q(milestone__workstream__program__program_leads=self.request.user) |
+            Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
+            Q(milestone__workstream__workstream_leads=self.request.user) |
+            Q(milestone__workstream__team_members=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__program_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
+            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__team_members=self.request.user)
+        )
+
+        # Standalone activities: no workstream or milestone, but with updated_by set.
+        standalone_qs = base_qs.filter(
+            workstream__isnull=True,
+            milestone__isnull=True,
+            updated_by__isnull=False
+        )
+
+        return (related_qs | standalone_qs).distinct()
+
 
     @action(detail=True, methods=['patch'])
     def update_status(self, request, pk=None):
@@ -418,43 +471,105 @@ class TrendAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Default time range is 30 days unless specified in query params
         try:
             time_range = int(request.query_params.get('time_range', 30))
         except ValueError:
             time_range = 30
-
+    
         today = timezone.now().date()
         start_date = today - timedelta(days=time_range)
-
-        # Get completed activities by their completion date within the range.
+    
         completed_qs = Activity.objects.filter(
             status='completed',
             completed_date__range=(start_date, today)
         ).annotate(day=TruncDate('completed_date')).values('day').annotate(count=Count('id'))
-
-        # Get in-progress activities by their target end date within the range.
+    
         in_progress_qs = Activity.objects.filter(
             status='in_progress',
             target_end_date__range=(start_date, today)
         ).annotate(day=TruncDate('target_end_date')).values('day').annotate(count=Count('id'))
-
-        # Convert queryset results into dictionaries keyed by date.
+    
+        failed_qs = Activity.objects.filter(
+            status='completed',
+            completed_date__gt=F('target_end_date'),
+            completed_date__range=(start_date, today)
+        ).annotate(day=TruncDate('completed_date')).values('day').annotate(count=Count('id'))
+    
         completed_dict = {entry['day']: entry['count'] for entry in completed_qs}
         in_progress_dict = {entry['day']: entry['count'] for entry in in_progress_qs}
-
-        # Build trend data for each day in the range.
+        failed_dict = {entry['day']: entry['count'] for entry in failed_qs}
+    
         trend_data = []
         current_day = start_date
         while current_day <= today:
             trend_data.append({
                 'date': current_day.isoformat(),
                 'completed': completed_dict.get(current_day, 0),
-                'in_progress': in_progress_dict.get(current_day, 0)
+                'in_progress': in_progress_dict.get(current_day, 0),
+                'failed': failed_dict.get(current_day, 0)
             })
             current_day += timedelta(days=1)
-
+    
         return Response(trend_data)
+
+
+
+
+class PerformanceDashboardView(APIView): 
+    """ 
+    Returns aggregated performance metrics including: 
+        • Average completion times for completed activities (based on target start dates) and milestones (using deadlines). 
+        • Counts of overdue tasks versus completed tasks. 
+        • Percentage of tasks that failed to meet target start/end dates and on-time completions.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.now().date()
+        from django.db.models import Avg, Count, ExpressionWrapper, F, DurationField, Q, Value, Case, When
+    
+        # Average completion time for completed activities (difference between completed_date and target_start_date)
+        activity_completion = Activity.objects.filter(status='completed').annotate(
+            completion_time=ExpressionWrapper(F('completed_date') - F('target_start_date'), output_field=DurationField())
+        ).aggregate(avg_completion_time=Avg('completion_time'))
+    
+        # For milestones, using the difference between completed_date and deadline
+        milestone_completion = Milestone.objects.filter(status='completed').annotate(
+            completion_time=ExpressionWrapper(F('completed_date') - F('deadline'), output_field=DurationField())
+        ).aggregate(avg_completion_time=Avg('completion_time'))
+    
+        overdue_tasks = Activity.objects.filter(
+            status__in=['not_started', 'in_progress'],
+            target_end_date__lt=today
+        ).count()
+    
+        completed_tasks = Activity.objects.filter(status='completed').count()
+        # completed_tasks=Count('activities', filter=Q(activities__status='completed')),
+    
+        # Calculate tasks that completed late (failing to meet target end dates)
+        failing_tasks = Activity.objects.filter(
+            status='completed',
+            completed_date__gt=F('target_end_date')
+        ).count()
+        total_completed = Activity.objects.filter(status='completed').count()
+        failing_percentage = (failing_tasks / total_completed * 100) if total_completed > 0 else 0
+    
+        # Calculate percentage of tasks completed on time
+        on_time_tasks = Activity.objects.filter(
+            status='completed',
+            completed_date__lte=F('target_end_date')
+        ).count()
+        on_time_percentage = (on_time_tasks / total_completed * 100) if total_completed > 0 else 0
+    
+        data = {
+            'average_completion_time_activities': str(activity_completion['avg_completion_time']),
+            'average_completion_time_milestones': str(milestone_completion['avg_completion_time']),
+            'overdue_tasks': overdue_tasks,
+            'completed_tasks': completed_tasks,
+            'failing_tasks_percentage': failing_percentage,
+            'on_time_percentage': on_time_percentage,
+        }
+        return Response(data)
 
 
 class RiskAssessmentView(APIView):
