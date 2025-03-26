@@ -116,8 +116,8 @@ class Program(models.Model):
     workforce_sponsors = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="program_workforce_sponsors")
 
     # Goals
-    key_improvement_targets = models.ManyToManyField(StrategicGoal, related_name="program_improvement_targets")
-    key_organizational_goals = models.ManyToManyField(StrategicGoal, related_name="program_organizational_goals")
+    key_improvement_targets = models.ManyToManyField(StrategicGoal, related_name="program_improvement_targets", blank=True)
+    key_organizational_goals = models.ManyToManyField(StrategicGoal, related_name="program_organizational_goals", blank=True)
 
     def __str__(self):
         return self.name
