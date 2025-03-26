@@ -212,8 +212,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class WorkstreamSerializer(serializers.ModelSerializer):
-    milestones = MilestoneSerializer(many=True, read_only=True)
-    activities = ActivitySerializer(many=True, read_only=True)
+    milestones = serializers.SerializerMethodField()
+    activities = serializers.SerializerMethodField()
     contributors = serializers.SerializerMethodField()
     progress_summary = serializers.SerializerMethodField()
 
@@ -221,6 +221,16 @@ class WorkstreamSerializer(serializers.ModelSerializer):
         model = Workstream
         fields = '__all__'
 
+    def get_milestones(self, obj):
+        # Fetch all related milestones, then collapse duplicates by ID
+        unique = {m.id: m for m in obj.milestones.all()}.values()
+        return MilestoneSerializer(unique, many=True, context=self.context).data
+
+    def get_activities(self, obj):
+        qs = obj.activities.filter(milestone__isnull=True)
+        unique = {a.id: a for a in qs}.values()
+        return ActivitySerializer(unique, many=True, context=self.context).data
+    
     def get_contributors(self, obj):
         contributors = obj.get_contributors().distinct()
         return [{
