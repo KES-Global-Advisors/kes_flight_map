@@ -223,6 +223,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
 ]
 
+CSRF_TRUSTED_ORIGINS.append("https://stalwart-panda-08e7f3.netlify.app")
+CORS_ALLOWED_ORIGINS.append("https://stalwart-panda-08e7f3.netlify.app")
+
 # Session Configuration (if using session authentication)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = True
