@@ -88,3 +88,5 @@ if DEBUG:
 
 if 'localhost' in ALLOWED_HOSTS:
     raise ValueError("Remove localhost from production hosts!")
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
