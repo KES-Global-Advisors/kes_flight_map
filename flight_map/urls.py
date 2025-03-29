@@ -14,7 +14,7 @@ from .views import (
 )
 
 router = DefaultRouter()
-router.register(r'roadmaps', RoadmapViewSet, basename='roadmap')
+router.register(r'flightmaps', RoadmapViewSet, basename='flightmap')
 router.register(r'milestones', MilestoneViewSet, basename='milestone')
 router.register(r'activities', ActivityViewSet, basename='activity')
 
