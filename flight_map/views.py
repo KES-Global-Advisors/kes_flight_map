@@ -321,6 +321,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         except ValidationError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        return Response(queryset.values('id', 'name', 'calculated_progress'))
+
 
 class ActivityViewSet(viewsets.ModelViewSet):
     serializer_class = ActivitySerializer
