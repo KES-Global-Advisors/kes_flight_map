@@ -9,21 +9,23 @@ from django.utils import timezone
 from datetime import timedelta
 
 User = get_user_model()
-
+    
 class StrategicGoalSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StrategicGoal
-        fields = ['id', 'category', 'goal_text', 'strategy']
+        fields = ['id', 'category', 'goal_text', 'display', 'strategy']
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
+        # Represent the strategy as an object with id and name
         rep['strategy'] = {
             'id': instance.strategy.id,
             'name': instance.strategy.name
         }
         return rep
-    
+
+
 
 class ContributorSerializer(serializers.ModelSerializer):
     # user = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -190,6 +192,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'completed_date': {'read_only': True},
             'workstream': {'required': False, 'allow_null': True},
+            'parent_milestone': {'required': False, 'allow_null': True},
         }
 
     def validate(self, data):
@@ -214,12 +217,18 @@ class MilestoneSerializer(serializers.ModelSerializer):
 class WorkstreamSerializer(serializers.ModelSerializer):
     milestones = serializers.SerializerMethodField()
     activities = serializers.SerializerMethodField()
-    contributors = serializers.SerializerMethodField()
+    workstream_leads = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
+    team_members = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
     progress_summary = serializers.SerializerMethodField()
 
     class Meta:
-        model = Workstream
-        fields = '__all__'
+         model = Workstream
+         fields = '__all__'
+
 
     def get_milestones(self, obj):
         # Fetch all related milestones, then collapse duplicates by ID
@@ -248,10 +257,19 @@ class WorkstreamSerializer(serializers.ModelSerializer):
 class ProgramSerializer(serializers.ModelSerializer):
     workstreams = WorkstreamSerializer(many=True, read_only=True)
     progress = serializers.SerializerMethodField()
+    executive_sponsors = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
+    program_leads = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
+    workforce_sponsors = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
 
     class Meta:
-        model = Program
-        fields = '__all__'
+         model = Program
+         fields = '__all__'
 
     def get_progress(self, obj):
         milestones = Milestone.objects.filter(workstream__program=obj)
@@ -268,6 +286,15 @@ class ProgramSerializer(serializers.ModelSerializer):
 class StrategySerializer(serializers.ModelSerializer):
     programs = ProgramSerializer(many=True, read_only=True)
     goal_summary = serializers.SerializerMethodField()
+    executive_sponsors = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
+    strategy_leads = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
+    communication_leads = serializers.SlugRelatedField(
+         many=True, read_only=True, slug_field='username'
+    )
 
     class Meta:
         model = Strategy
@@ -275,9 +302,10 @@ class StrategySerializer(serializers.ModelSerializer):
 
     def get_goal_summary(self, obj):
         return {
-            'business_goals': obj.goals.filter(category='business').count(),
-            'organizational_goals': obj.goals.filter(category='organizational').count()
+            'business_goals': list(obj.goals.filter(category='business').values_list('goal_text', flat=True)),
+            'organizational_goals': list(obj.goals.filter(category='organizational').values_list('goal_text', flat=True))
         }
+
 
 class RoadmapSerializer(serializers.ModelSerializer):
     strategies = StrategySerializer(many=True, read_only=True)
