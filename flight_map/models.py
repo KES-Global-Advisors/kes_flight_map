@@ -190,6 +190,17 @@ class Milestone(models.Model):
         blank=True,
         help_text="Milestones that must be completed before this milestone can be achieved."
     )
+
+    # Add a parent milestone field:
+    parent_milestone = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        related_name='child_milestones',
+        on_delete=models.SET_NULL,
+        help_text="The direct parent milestone that this milestone depends on."
+    )
+
     # capture who updated this milestone
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
