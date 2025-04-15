@@ -14,7 +14,7 @@ class StrategicGoalSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StrategicGoal
-        fields = ['id', 'category', 'goal_text', 'display', 'strategy']
+        fields = ['id', 'category', 'goal_text', 'strategy']
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
@@ -24,8 +24,6 @@ class StrategicGoalSerializer(serializers.ModelSerializer):
             'name': instance.strategy.name
         }
         return rep
-
-
 
 class ContributorSerializer(serializers.ModelSerializer):
     # user = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -56,7 +54,6 @@ class MilestoneContributorSerializer(ContributorSerializer):
         )
         return contributor
 
-
 class ActivityContributorSerializer(ContributorSerializer):
     class Meta(ContributorSerializer.Meta):
         model = ActivityContributor
@@ -76,8 +73,6 @@ class ActivityContributorSerializer(ContributorSerializer):
             user=user
         )
         return contributor
-
-
 
 class ActivitySerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Activity.STATUS_CHOICES)
@@ -169,7 +164,6 @@ class ActivitySerializer(serializers.ModelSerializer):
         if request and request.user and request.user.is_authenticated:
             instance.updated_by = request.user
         return super().update(instance, validated_data)
-
 
 class MilestoneSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Milestone.STATUS_CHOICES)
@@ -306,7 +300,6 @@ class StrategySerializer(serializers.ModelSerializer):
             'organizational_goals': list(obj.goals.filter(category='organizational').values_list('goal_text', flat=True))
         }
 
-
 class RoadmapSerializer(serializers.ModelSerializer):
     strategies = StrategySerializer(many=True, read_only=True)
     milestone_summary = serializers.SerializerMethodField()
@@ -375,7 +368,6 @@ class MilestoneStatusSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'completed_date': {'required': False}
         }
-
 
 class ActivityStatusSerializer(serializers.ModelSerializer):
     class Meta:
