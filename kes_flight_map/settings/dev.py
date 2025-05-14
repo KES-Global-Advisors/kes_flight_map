@@ -3,7 +3,12 @@ from .base import *
 # Development-specific configurations
 DEBUG = True
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    "134.209.75.92",
+    "kesflightmap.netlify.app",
+    "localhost",
+    "127.0.0.1"
+    ]
 
 # Local database configuration
 DATABASES = {

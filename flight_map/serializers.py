@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     Roadmap, Strategy, StrategicGoal, Program,
     Workstream, Milestone, Activity,
-    MilestoneContributor, ActivityContributor
+    MilestoneContributor, ActivityContributor,
+    NodePosition
 )
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -382,3 +383,9 @@ class ActivityStatusSerializer(serializers.ModelSerializer):
         if data.get('status') == 'in_progress' and not data.get('actual_start_date'):
             data['actual_start_date'] = timezone.now().date()
         return data
+
+class NodePositionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NodePosition
+        fields = ['id', 'flightmap', 'node_type', 'node_id', 'rel_y', 'updated_at', 
+          'is_duplicate', 'duplicate_key', 'original_node_id']

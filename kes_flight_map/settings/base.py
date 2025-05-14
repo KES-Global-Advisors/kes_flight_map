@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 
 # Update CORS settings
 CORS_ALLOWED_ORIGINS = [
+    "https://kesflightmap.netlify.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     # Add other frontend origins as needed

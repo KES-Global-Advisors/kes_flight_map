@@ -1,4 +1,4 @@
-from rest_framework import generics, viewsets, status
+from rest_framework import generics, viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -12,7 +12,8 @@ from datetime import timedelta
 from .models import (
     Roadmap, Strategy, Program, Workstream,
     Milestone, Activity, StrategicGoal,
-    MilestoneContributor, ActivityContributor
+    MilestoneContributor, ActivityContributor,
+    NodePosition,
 )
 from .serializers import (
     RoadmapSerializer, StrategySerializer,
@@ -21,7 +22,7 @@ from .serializers import (
     DashboardMilestoneSerializer, EmployeeContributionSerializer,
     MilestoneStatusSerializer, ActivityStatusSerializer,
     StrategicGoalSerializer, MilestoneContributorSerializer,
-    ActivityContributorSerializer,
+    ActivityContributorSerializer, NodePositionSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
@@ -325,7 +326,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         return Response(queryset.values('id', 'name', 'calculated_progress'))
 
-
 class ActivityViewSet(viewsets.ModelViewSet):
     serializer_class = ActivitySerializer
     permission_classes = [IsAuthenticated]
@@ -386,7 +386,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class EmployeeContributionsView(generics.ListAPIView):
     serializer_class = EmployeeContributionSerializer
@@ -516,9 +515,6 @@ class TrendAnalysisView(APIView):
     
         return Response(trend_data)
 
-
-
-
 class PerformanceDashboardView(APIView): 
     """ 
     Returns aggregated performance metrics including: 
@@ -575,7 +571,6 @@ class PerformanceDashboardView(APIView):
         }
         return Response(data)
 
-
 class RiskAssessmentView(APIView):
     """
     Analyzes milestones (that are not yet completed) and returns a risk metric for each.
@@ -630,7 +625,6 @@ class RiskAssessmentView(APIView):
             })
 
         return Response(risks)
-
 
 class ResourceAllocationView(APIView):
     """
@@ -703,3 +697,103 @@ class ActivityContributorCreateView(generics.CreateAPIView):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
+
+class NodePositionViewSet(viewsets.ModelViewSet):
+    queryset = NodePosition.objects.all()
+    serializer_class = NodePositionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # only positions for this flightmap (and optionally filter by group/user perms)
+        fmap = self.request.query_params.get('flightmap')
+        return NodePosition.objects.filter(flightmap_id=fmap)
+    
+    def perform_create(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['DELETE'])
+    def reset(self, request):
+        flightmap_id = request.query_params.get('flightmap')
+        if not flightmap_id:
+            return Response({"error": "flightmap parameter is required"}, status=400)
+
+        # Delete all positions for this flightmap
+        NodePosition.objects.filter(flightmap_id=flightmap_id).delete()
+
+        # Create default positions with appropriate spacing
+        self.create_default_positions(flightmap_id, request.user)
+
+        return Response({"message": "Reset positions with default spacing"}, status=200)
+
+    def create_default_positions(self, flightmap_id, user):
+        # Get the flightmap
+        try:
+            flightmap = Roadmap.objects.get(id=flightmap_id)
+        except Roadmap.DoesNotExist:
+            return
+
+        # Get all workstreams related to this flightmap
+        workstreams = Workstream.objects.filter(
+            program__strategy__roadmap=flightmap
+        ).distinct()
+
+        # Calculate default positions for workstreams
+        workstream_count = workstreams.count()
+        workstream_positions = {}
+
+        for index, workstream in enumerate(workstreams):
+            # Distribute workstreams evenly in vertical space with margins
+            # Using 0.1-0.9 range to leave margin at top and bottom
+            rel_y = 0.1 + (0.8 * index / max(1, workstream_count - 1)) if workstream_count > 1 else 0.5
+
+            # Store for milestone positioning
+            workstream_positions[workstream.id] = rel_y
+
+            # Create workstream position
+            NodePosition.objects.create(
+                flightmap=flightmap,
+                node_type='workstream',
+                node_id=workstream.id,
+                rel_y=rel_y,
+                updated_by=user
+            )
+
+        # Now position all milestones based on their workstreams
+        for workstream_id, base_y in workstream_positions.items():
+            # Get milestones for this workstream
+            milestones = Milestone.objects.filter(workstream_id=workstream_id)
+
+            # Group milestones by deadline to prevent overlaps
+            deadline_groups = {}
+            for milestone in milestones:
+                deadline_str = milestone.deadline.isoformat() if milestone.deadline else "none"
+                if deadline_str not in deadline_groups:
+                    deadline_groups[deadline_str] = []
+                deadline_groups[deadline_str].append(milestone)
+
+            # Process each deadline group
+            for group in deadline_groups.values():
+                group_size = len(group)
+
+                for i, milestone in enumerate(group):
+                    # Calculate offset based on group size
+                    # For a single milestone, no offset
+                    # For multiple, spread them with offsets (larger groups = larger spread)
+                    offset = 0
+                    if group_size > 1:
+                        # Create a vertical spread based on number of milestones in this group
+                        # Use progressive offsets: -0.05, -0.03, 0, 0.03, 0.05 for 5 items
+                        max_offset = min(0.05 * group_size, 0.15)  # Cap maximum offset
+                        offset = -max_offset + (2 * max_offset * i / (group_size - 1)) if group_size > 1 else 0
+
+                    # Create milestone position with base + offset
+                    NodePosition.objects.create(
+                        flightmap=flightmap,
+                        node_type='milestone',
+                        node_id=milestone.id,
+                        rel_y=base_y + offset,
+                        updated_by=user
+                    )
