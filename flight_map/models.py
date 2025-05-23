@@ -45,11 +45,11 @@ class ActivityQuerySet(models.QuerySet):
             )
         )
     
-class Roadmap(models.Model):
-    """Central roadmap container for all components"""
+class Flightmap(models.Model):
+    """Central flightmap container for all components"""
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_roadmaps")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_flightmaps")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -61,7 +61,7 @@ class Roadmap(models.Model):
 
 class Strategy(models.Model):
     """Strategic initiative container"""
-    roadmap = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="strategies")
+    flightmap = models.ForeignKey(Flightmap, on_delete=models.CASCADE, related_name="strategies")
     name = models.CharField(max_length=255)
     tagline = models.CharField(max_length=255, blank=True, null=True)
     vision = models.TextField()
@@ -76,7 +76,7 @@ class Strategy(models.Model):
         return self.name
 
     def clean(self):
-        if self.roadmap:
+        if self.flightmap:
             latest_program_date = self.programs.aggregate(models.Max('time_horizon'))['time_horizon__max']
             if latest_program_date and self.time_horizon < latest_program_date:
                 raise ValidationError("Strategy time horizon cannot be earlier than its latest program's horizon.")
@@ -368,7 +368,7 @@ class NodePosition(models.Model):
         ('workstream', 'Workstream'),
         ('milestone',   'Milestone'),
     ]
-    flightmap   = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="positions")
+    flightmap   = models.ForeignKey(Flightmap, on_delete=models.CASCADE, related_name="positions")
     node_type   = models.CharField(max_length=12, choices=NODE_TYPES)
     node_id     = models.CharField(max_length=100)  # e.g. milestone.id or workstream.id
     rel_y       = models.FloatField()    # 0.0–1.0 relative vertical position
