@@ -11,12 +11,14 @@ from .views import (
     DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
     ResourceAllocationView, MilestoneContributorCreateView,
     ActivityContributorCreateView, PerformanceDashboardView,
+    NodePositionViewSet,
 )
 
 router = DefaultRouter()
-router.register(r'roadmaps', RoadmapViewSet, basename='roadmap')
+router.register(r'flightmaps', RoadmapViewSet, basename='flightmap')
 router.register(r'milestones', MilestoneViewSet, basename='milestone')
 router.register(r'activities', ActivityViewSet, basename='activity')
+router.register(r'positions', NodePositionViewSet, basename='position')
 
 urlpatterns = [
     # New viewsets

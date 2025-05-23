@@ -22,8 +22,8 @@ DATABASES = {
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = env('MAILGUN_SMTP_SERVER', default='smtp.mailgun.org')
 EMAIL_PORT = env.int('MAILGUN_SMTP_PORT', default=587)
-EMAIL_HOST_USER = env('MAILGUN_SMTP_LOGIN')
-EMAIL_HOST_PASSWORD = env('MAILGUN_SMTP_PASSWORD')
+EMAIL_HOST_USER = env('MAILGUN_SMTP_LOGIN', default='')
+EMAIL_HOST_PASSWORD = env('MAILGUN_SMTP_PASSWORD', default='')
 EMAIL_USE_TLS = True
 
 # Enhanced security headers
@@ -88,3 +88,5 @@ if DEBUG:
 
 if 'localhost' in ALLOWED_HOSTS:
     raise ValueError("Remove localhost from production hosts!")
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
