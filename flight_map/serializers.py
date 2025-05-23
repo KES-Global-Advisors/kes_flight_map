@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Roadmap, Strategy, StrategicGoal, Program,
+    Flightmap, Strategy, StrategicGoal, Program,
     Workstream, Milestone, Activity,
     MilestoneContributor, ActivityContributor,
     NodePosition
@@ -301,16 +301,16 @@ class StrategySerializer(serializers.ModelSerializer):
             'organizational_goals': list(obj.goals.filter(category='organizational').values_list('goal_text', flat=True))
         }
 
-class RoadmapSerializer(serializers.ModelSerializer):
+class FlightmapSerializer(serializers.ModelSerializer):
     strategies = StrategySerializer(many=True, read_only=True)
     milestone_summary = serializers.SerializerMethodField()
 
     class Meta:
-        model = Roadmap
+        model = Flightmap
         fields = '__all__'
 
     def get_milestone_summary(self, obj):
-        milestones = Milestone.objects.filter(workstream__program__strategy__roadmap=obj)
+        milestones = Milestone.objects.filter(workstream__program__strategy__flightmap=obj)
         return {
             'total': milestones.count(),
             'completed': milestones.filter(status='completed').count(),

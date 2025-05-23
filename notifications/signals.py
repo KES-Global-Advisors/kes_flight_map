@@ -1,7 +1,7 @@
 # notifications/signals.py
 from django.db.models.signals import pre_save, post_save, m2m_changed
 from django.dispatch import receiver
-from flight_map.models import Roadmap, Activity, Milestone, Strategy, Program, Workstream
+from flight_map.models import Flightmap, Activity, Milestone, Strategy, Program, Workstream
 from .models import Notification
 
 # Utility function to send notifications to all Admin and Manager users
@@ -17,12 +17,12 @@ def notify_admin_manager(message, link, actor):
             link=link
         )
 
-# --- Roadmap Creation Notification ---
-@receiver(post_save, sender=Roadmap)
-def notify_roadmap_created(sender, instance, created, **kwargs):
+# --- Flightmap Creation Notification ---
+@receiver(post_save, sender=Flightmap)
+def notify_flightmap_created(sender, instance, created, **kwargs):
     if created:
-        message = f"{instance.owner.username} created {instance.name} Roadmap"
-        link = f"/roadmaps/{instance.id}/"  # Adjust URL as needed
+        message = f"{instance.owner.username} created {instance.name} Flightmap"
+        link = f"/flightmaps/{instance.id}/"  # Adjust URL as needed
         notify_admin_manager(message, link, actor=instance.owner)
 
 # --- Activity Status Change Notification ---

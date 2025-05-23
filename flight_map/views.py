@@ -11,13 +11,13 @@ from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from datetime import timedelta
 from .models import (
-    Roadmap, Strategy, Program, Workstream,
+    Flightmap, Strategy, Program, Workstream,
     Milestone, Activity, StrategicGoal,
     MilestoneContributor, ActivityContributor,
     NodePosition,
 )
 from .serializers import (
-    RoadmapSerializer, StrategySerializer,
+    FlightmapSerializer, StrategySerializer,
     ProgramSerializer, WorkstreamSerializer,
     MilestoneSerializer, ActivitySerializer,
     DashboardMilestoneSerializer, EmployeeContributionSerializer,
@@ -113,14 +113,14 @@ class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
 
 
 # Viewsets for models with extended functionality
-class RoadmapViewSet(viewsets.ModelViewSet):
-    serializer_class = RoadmapSerializer
+class FlightmapViewSet(viewsets.ModelViewSet):
+    serializer_class = FlightmapSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['owner']
 
     def get_queryset(self):
-        return Roadmap.objects.prefetch_related(
+        return Flightmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
                      queryset=Milestone.objects.annotate_progress().distinct()),
             Prefetch('strategies__programs__workstreams__activities',
@@ -140,10 +140,10 @@ class RoadmapViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def timeline(self, request, pk=None):
-        roadmap = self.get_object()
+        flightmap = self.get_object()
         timeline_events = []
 
-        for strategy in roadmap.strategies.all():
+        for strategy in flightmap.strategies.all():
             for program in strategy.programs.all():
                 for workstream in program.workstreams.all():
                     # Milestones
@@ -179,7 +179,7 @@ class ProgressDashboardView(APIView):
         if cached_data:
             return Response(cached_data)
 
-        roadmaps = Roadmap.objects.filter(
+        flightmaps = Flightmap.objects.filter(
             Q(owner=request.user) |
             Q(strategies__executive_sponsors=request.user) |
             Q(strategies__strategy_leads=request.user)
@@ -201,17 +201,17 @@ class ProgressDashboardView(APIView):
         ).distinct()
 
         response_data = {
-            'summary': self.get_summary(roadmaps),
-            'employee_contributions': self.get_contributions(roadmaps),
-            'strategic_alignment': self.get_strategic_alignment(roadmaps)
+            'summary': self.get_summary(flightmaps),
+            'employee_contributions': self.get_contributions(flightmaps),
+            'strategic_alignment': self.get_strategic_alignment(flightmaps)
         }
 
         cache.set(cache_key, response_data, 300)  # Cache for 5 minutes
         return Response(response_data)
 
-    def get_summary(self, roadmaps):
+    def get_summary(self, flightmaps):
         milestones = Milestone.objects.filter(
-            workstream__program__strategy__roadmap__in=roadmaps
+            workstream__program__strategy__flightmap__in=flightmaps
         )
         today = timezone.now().date()
 
@@ -229,10 +229,10 @@ class ProgressDashboardView(APIView):
             }
         }
 
-    def get_contributions(self, roadmaps):
+    def get_contributions(self, flightmaps):
         contributors = User.objects.filter(
-            Q(milestonecontributor__milestone__workstream__program__strategy__roadmap__in=roadmaps) |
-            Q(activitycontributor__activity__workstream__program__strategy__roadmap__in=roadmaps)
+            Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__in=flightmaps) |
+            Q(activitycontributor__activity__workstream__program__strategy__flightmap__in=flightmaps)
         ).distinct().annotate(
             total_contributions=Count(
                 'milestonecontributor',
@@ -247,9 +247,9 @@ class ProgressDashboardView(APIView):
 
         return EmployeeContributionSerializer(contributors, many=True).data
 
-    def get_strategic_alignment(self, roadmaps):
+    def get_strategic_alignment(self, flightmaps):
         return StrategicGoal.objects.filter(
-            strategy__roadmap__in=roadmaps
+            strategy__flightmap__in=flightmaps
         ).annotate(
             milestone_count=Count('associated_milestones')
         ).values('category', 'milestone_count')
@@ -271,7 +271,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         related_qs = base_qs.filter(
             workstream__isnull=False
         ).filter(
-            Q(workstream__program__strategy__roadmap__owner=user) |
+            Q(workstream__program__strategy__flightmap__owner=user) |
             Q(workstream__program__strategy__executive_sponsors=user) |
             Q(workstream__program__strategy__strategy_leads=user) |
             Q(workstream__program__strategy__communication_leads=user) |
@@ -345,28 +345,28 @@ class ActivityViewSet(viewsets.ModelViewSet):
         related_qs = base_qs.filter(
             Q(workstream__isnull=False) | Q(milestone__isnull=False)
         ).filter(
-            Q(workstream__program__strategy__roadmap__owner=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(workstream__program__strategy__flightmap__owner=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__strategy_leads=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__communication_leads=self.request.user) |
             Q(workstream__program__executive_sponsors=self.request.user) |
             Q(workstream__program__program_leads=self.request.user) |
             Q(workstream__program__workforce_sponsors=self.request.user) |
             Q(workstream__workstream_leads=self.request.user) |
             Q(workstream__team_members=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__strategies__executive_sponsors=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__strategies__strategy_leads=self.request.user) |
-            Q(milestone__workstream__program__strategy__roadmap__strategies__communication_leads=self.request.user) |
+            Q(milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
+            Q(milestone__workstream__program__strategy__flightmap__strategies__executive_sponsors=self.request.user) |
+            Q(milestone__workstream__program__strategy__flightmap__strategies__strategy_leads=self.request.user) |
+            Q(milestone__workstream__program__strategy__flightmap__strategies__communication_leads=self.request.user) |
             Q(milestone__workstream__program__executive_sponsors=self.request.user) |
             Q(milestone__workstream__program__program_leads=self.request.user) |
             Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
             Q(milestone__workstream__workstream_leads=self.request.user) |
             Q(milestone__workstream__team_members=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__programs__executive_sponsors=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__programs__program_leads=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
-            Q(workstream__program__strategy__roadmap__strategies__programs__workstreams__team_members=self.request.user)
+            Q(workstream__program__strategy__flightmap__strategies__programs__executive_sponsors=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__programs__program_leads=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
+            Q(workstream__program__strategy__flightmap__strategies__programs__workstreams__team_members=self.request.user)
         )
 
         # Standalone activities: no workstream or milestone, but with updated_by set.
@@ -394,8 +394,8 @@ class EmployeeContributionsView(generics.ListAPIView):
 
     def get_queryset(self):
         return User.objects.filter(
-            Q(milestonecontributor__milestone__workstream__program__strategy__roadmap__owner=self.request.user) |
-            Q(activitycontributor__activity__workstream__program__strategy__roadmap__owner=self.request.user)
+            Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
+            Q(activitycontributor__activity__workstream__program__strategy__flightmap__owner=self.request.user)
         ).distinct().annotate(
             completed_milestones=Count(
                 'milestonecontributor',
@@ -420,7 +420,7 @@ class StrategicAlignmentView(APIView):
 
     def get(self, request):
         goals = StrategicGoal.objects.filter(
-            strategy__roadmap__owner=request.user
+            strategy__flightmap__owner=request.user
         ).annotate(
             milestone_count=Count('associated_milestones'),
             completed_milestones=Count(
@@ -461,7 +461,7 @@ class DashboardMilestoneView(generics.ListAPIView):
 
     def get_queryset(self):
         return Milestone.objects.annotate_progress().filter(
-            workstream__program__strategy__roadmap__owner=self.request.user
+            workstream__program__strategy__flightmap__owner=self.request.user
         ).select_related('workstream__program__strategy')
 
 
@@ -581,9 +581,9 @@ class RiskAssessmentView(APIView):
 
     def get(self, request):
         today = timezone.now().date()
-        # Select milestones for roadmaps owned by the current user that are not completed.
+        # Select milestones for flightmaps owned by the current user that are not completed.
         milestones = Milestone.objects.filter(
-            workstream__program__strategy__roadmap__owner=request.user,
+            workstream__program__strategy__flightmap__owner=request.user,
             status__in=['not_started', 'in_progress']
         )
 
@@ -629,16 +629,16 @@ class RiskAssessmentView(APIView):
 
 class ResourceAllocationView(APIView):
     """
-    Returns workload distribution for team members involved in roadmaps owned by the
+    Returns workload distribution for team members involved in flightmaps owned by the
     current user. For each user, it provides counts of current, upcoming, and overdue tasks.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         today = timezone.now().date()
-        # Filter users associated with activities in roadmaps owned by the current user.
+        # Filter users associated with activities in flightmaps owned by the current user.
         users = User.objects.filter(
-            Q(activitycontributor__activity__workstream__program__strategy__roadmap__owner=request.user)
+            Q(activitycontributor__activity__workstream__program__strategy__flightmap__owner=request.user)
         ).distinct().annotate(
             current_tasks=Count(
                 'activitycontributor',
@@ -783,8 +783,8 @@ class NodePositionViewSet(viewsets.ModelViewSet):
         
         # Validate flightmap exists
         try:
-            flightmap = Roadmap.objects.get(id=flightmap_id)
-        except Roadmap.DoesNotExist:
+            flightmap = Flightmap.objects.get(id=flightmap_id)
+        except Flightmap.DoesNotExist:
             return Response({"error": f"Flightmap with ID {flightmap_id} not found"}, 
                            status=status.HTTP_404_NOT_FOUND)
         
