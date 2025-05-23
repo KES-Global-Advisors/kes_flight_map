@@ -41,14 +41,6 @@ INSTALLED_APPS = [
 ]
 
 # Update CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "https://kesflightmap.netlify.app",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    # Add other frontend origins as needed
-]
-
-# Add these settings
 CORS_ALLOW_METHODS = [
     'DELETE',
     'GET',
@@ -73,7 +65,6 @@ CORS_ALLOW_HEADERS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -209,23 +200,15 @@ CSRF_COOKIE_SAMESITE = 'Lax'  # Balances security and usability
 CSRF_HEADER_NAME = 'X-CSRFToken'  # Header name for CSRF token
 # settings/base.py
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
+   "https://kesflightmap.netlify.app",
 ]
 
 # CORS Configuration
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", 
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
 
-CSRF_TRUSTED_ORIGINS.append("https://stalwart-panda-08e7f3.netlify.app")
-CORS_ALLOWED_ORIGINS.append("https://stalwart-panda-08e7f3.netlify.app")
+CORS_ALLOWED_ORIGINS = [
+    "https://kesflightmap.netlify.app",
+]
 
 # Session Configuration (if using session authentication)
 SESSION_COOKIE_HTTPONLY = True
@@ -236,7 +219,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=3),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
