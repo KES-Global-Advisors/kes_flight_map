@@ -41,13 +41,6 @@ INSTALLED_APPS = [
 ]
 
 # Update CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    # Add other frontend origins as needed
-]
-
-# Add these settings
 CORS_ALLOW_METHODS = [
     'DELETE',
     'GET',
@@ -207,19 +200,14 @@ CSRF_COOKIE_SAMESITE = 'Lax'  # Balances security and usability
 CSRF_HEADER_NAME = 'X-CSRFToken'  # Header name for CSRF token
 # settings/base.py
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
+   "https://kesflightmap.netlify.app",
 ]
 
 # CORS Configuration
 CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", 
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
+    "https://kesflightmap.netlify.app",
 ]
 
 # Session Configuration (if using session authentication)

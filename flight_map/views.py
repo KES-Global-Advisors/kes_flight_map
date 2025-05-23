@@ -1,7 +1,8 @@
-from rest_framework import generics, viewsets, status
+from rest_framework import generics, viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
 from rest_framework.decorators import action
 from django.db.models import Prefetch, Count, Q, F, Case, When, Value, IntegerField, FloatField, CharField, Avg, DurationField, ExpressionWrapper
 from django.db.models.functions import TruncDate
@@ -12,7 +13,8 @@ from datetime import timedelta
 from .models import (
     Roadmap, Strategy, Program, Workstream,
     Milestone, Activity, StrategicGoal,
-    MilestoneContributor, ActivityContributor
+    MilestoneContributor, ActivityContributor,
+    NodePosition,
 )
 from .serializers import (
     RoadmapSerializer, StrategySerializer,
@@ -21,7 +23,7 @@ from .serializers import (
     DashboardMilestoneSerializer, EmployeeContributionSerializer,
     MilestoneStatusSerializer, ActivityStatusSerializer,
     StrategicGoalSerializer, MilestoneContributorSerializer,
-    ActivityContributorSerializer,
+    ActivityContributorSerializer, NodePositionSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
@@ -321,6 +323,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         except ValidationError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        return Response(queryset.values('id', 'name', 'calculated_progress'))
 
 class ActivityViewSet(viewsets.ModelViewSet):
     serializer_class = ActivitySerializer
@@ -382,7 +387,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class EmployeeContributionsView(generics.ListAPIView):
     serializer_class = EmployeeContributionSerializer
@@ -512,9 +516,6 @@ class TrendAnalysisView(APIView):
     
         return Response(trend_data)
 
-
-
-
 class PerformanceDashboardView(APIView): 
     """ 
     Returns aggregated performance metrics including: 
@@ -571,7 +572,6 @@ class PerformanceDashboardView(APIView):
         }
         return Response(data)
 
-
 class RiskAssessmentView(APIView):
     """
     Analyzes milestones (that are not yet completed) and returns a risk metric for each.
@@ -626,7 +626,6 @@ class RiskAssessmentView(APIView):
             })
 
         return Response(risks)
-
 
 class ResourceAllocationView(APIView):
     """
@@ -699,3 +698,167 @@ class ActivityContributorCreateView(generics.CreateAPIView):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
+
+class NodePositionViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing node positions within flightmap visualizations.
+    
+    Key features:
+    - Standard CRUD operations for individual node positions
+    - Bulk update capability for efficient position management
+    - Reset functionality to clear existing positions
+    """
+    queryset = NodePosition.objects.all()
+    serializer_class = NodePositionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Filter positions to only return those for the specified flightmap."""
+        flightmap_id = self.request.query_params.get('flightmap')
+        return NodePosition.objects.filter(flightmap_id=flightmap_id)
+    
+    def perform_create(self, serializer):
+        """Track the user who created the position."""
+        serializer.save(updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        """Track the user who updated the position."""
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['DELETE'])
+    def reset(self, request):
+        """
+        Reset all node positions for a flightmap.
+        
+        This endpoint simply removes existing positions without generating defaults.
+        The frontend is responsible for calculating and submitting new positions.
+        """
+        flightmap_id = request.query_params.get('flightmap')
+        if not flightmap_id:
+            return Response({"error": "flightmap parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Delete all positions for this flightmap
+        deletion_count = NodePosition.objects.filter(flightmap_id=flightmap_id).delete()[0]
+
+        return Response({
+            "message": f"Reset {deletion_count} positions. Awaiting new position data from client.",
+            "status": "success"
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['POST'])
+    def bulk_update(self, request):
+        """
+        Process multiple node position updates in a single transaction.
+        
+        Expected request format:
+        {
+            "flightmap_id": 123,
+            "positions": [
+                {
+                    "node_type": "workstream|milestone",
+                    "node_id": 456,
+                    "rel_y": 0.5,
+                    "is_duplicate": false,
+                    "duplicate_key": "",
+                    "original_node_id": null
+                },
+                ...
+            ]
+        }
+        
+        For optimal performance, this endpoint:
+        1. Validates the input data
+        2. Processes all updates in a single database transaction
+        3. Uses bulk creation for efficiency
+        """
+        flightmap_id = request.data.get('flightmap_id')
+        positions = request.data.get('positions', [])
+        
+        # Validate required parameters
+        if not flightmap_id:
+            return Response({"error": "flightmap_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not positions or not isinstance(positions, list):
+            return Response({"error": "positions array is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate flightmap exists
+        try:
+            flightmap = Roadmap.objects.get(id=flightmap_id)
+        except Roadmap.DoesNotExist:
+            return Response({"error": f"Flightmap with ID {flightmap_id} not found"}, 
+                           status=status.HTTP_404_NOT_FOUND)
+        
+        # Process all position updates in a single transaction
+        try:
+            with transaction.atomic():
+                # Create position objects for bulk creation
+                position_objects = []
+                
+                for pos in positions:
+                    # Validate required fields
+                    if not all(k in pos for k in ['node_type', 'node_id', 'rel_y']):
+                        return Response({
+                            "error": "Each position must include node_type, node_id, and rel_y"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Validate node_type
+                    if pos['node_type'] not in ['workstream', 'milestone']:
+                        return Response({
+                            "error": f"Invalid node_type: {pos['node_type']}. Must be 'workstream' or 'milestone'"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Validate rel_y is in proper range
+                    if not 0 <= pos['rel_y'] <= 1:
+                        return Response({
+                            "error": f"rel_y must be between 0 and 1, got {pos['rel_y']}"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Check for existing position
+                    existing = NodePosition.objects.filter(
+                        flightmap_id=flightmap_id,
+                        node_type=pos['node_type'],
+                        node_id=pos['node_id']
+                    ).first()
+                    
+                    if existing:
+                        # Update existing position
+                        existing.rel_y = pos['rel_y']
+                        existing.is_duplicate = pos.get('is_duplicate', False)
+                        existing.duplicate_key = pos.get('duplicate_key', '')
+                        existing.original_node_id = pos.get('original_node_id')
+                        existing.updated_by = request.user
+                        existing.save()
+                    else:
+                        # Create new position object
+                        position_objects.append(NodePosition(
+                            flightmap=flightmap,
+                            node_type=pos['node_type'],
+                            node_id=pos['node_id'],
+                            rel_y=pos['rel_y'],
+                            is_duplicate=pos.get('is_duplicate', False),
+                            duplicate_key=pos.get('duplicate_key', ''),
+                            original_node_id=pos.get('original_node_id'),
+                            updated_by=request.user
+                        ))
+                
+                # Use bulk_create for optimal performance if we have new positions
+                if position_objects:
+                    NodePosition.objects.bulk_create(position_objects)
+                
+                return Response({
+                    "message": f"Successfully processed {len(positions)} node positions",
+                    "updated": len(positions) - len(position_objects),
+                    "created": len(position_objects),
+                    "status": "success"
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            # Log the detailed error for debugging
+            import logging
+            logging.error(f"Error in bulk_update: {str(e)}")
+            
+            # Return a user-friendly error
+            return Response({
+                "error": "Failed to process node positions",
+                "detail": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

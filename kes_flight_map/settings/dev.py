@@ -1,9 +1,15 @@
 from .base import *
 
 # Development-specific configurations
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    "api.kesglobaladvisors.com",
+    "134.209.75.92",
+    "localhost",
+    "127.0.0.1"
+]
+
 
 # Local database configuration
 DATABASES = {

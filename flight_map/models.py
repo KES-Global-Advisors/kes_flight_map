@@ -45,7 +45,6 @@ class ActivityQuerySet(models.QuerySet):
             )
         )
     
-
 class Roadmap(models.Model):
     """Central roadmap container for all components"""
     name = models.CharField(max_length=255)
@@ -164,7 +163,6 @@ class Workstream(models.Model):
         verbose_name_plural = "Workstreams"
         ordering = ["name"]
 
-
 class Milestone(models.Model):
     """Progress tracking milestone"""
     STATUS_CHOICES = [
@@ -190,6 +188,17 @@ class Milestone(models.Model):
         blank=True,
         help_text="Milestones that must be completed before this milestone can be achieved."
     )
+
+    # Add a parent milestone field:
+    parent_milestone = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        related_name='child_milestones',
+        on_delete=models.SET_NULL,
+        help_text="The direct parent milestone that this milestone depends on."
+    )
+
     # capture who updated this milestone
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -246,7 +255,6 @@ class Milestone(models.Model):
         verbose_name_plural = "Milestones"
         ordering = ["deadline"]
         unique_together = (("workstream", "name"),)
-
 
 class MilestoneContributor(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="contributors")
@@ -353,3 +361,25 @@ class ActivityContributor(models.Model):
 
     class Meta:
         unique_together = ('activity', 'user')
+
+class NodePosition(models.Model):
+    FLIGHTMAP = 'flightmap'
+    NODE_TYPES = [
+        ('workstream', 'Workstream'),
+        ('milestone',   'Milestone'),
+    ]
+    flightmap   = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="positions")
+    node_type   = models.CharField(max_length=12, choices=NODE_TYPES)
+    node_id     = models.CharField(max_length=100)  # e.g. milestone.id or workstream.id
+    rel_y       = models.FloatField()    # 0.0–1.0 relative vertical position
+    updated_at  = models.DateTimeField(auto_now=True)
+    updated_by  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    
+    # Add these new fields to track duplicates
+    is_duplicate = models.BooleanField(default=False)
+    duplicate_key = models.CharField(max_length=100, null=True, blank=True)  # To store the generated duplicate ID
+    original_node_id = models.IntegerField(null=True, blank=True)  # Reference to the original node
+    
+    # class Meta:
+    #     # Unique constraint needs to include duplicate_key for duplicate nodes
+    #     unique_together = ('flightmap', 'node_type', 'node_id', 'duplicate_key')
