@@ -57,6 +57,7 @@ class Flightmap(models.Model):
         return self.name
 
     class Meta:
+        unique_together = ('name', 'owner')
         ordering = ['-created_at']
 
 class Strategy(models.Model):
