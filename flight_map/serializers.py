@@ -3,7 +3,7 @@ from .models import (
     Flightmap, Strategy, StrategicGoal, Program,
     Workstream, Milestone, Activity,
     MilestoneContributor, ActivityContributor,
-    NodePosition
+    NodePosition, FlightmapDraft,
 )
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -317,6 +317,12 @@ class FlightmapSerializer(serializers.ModelSerializer):
             'in_progress': milestones.filter(status='in_progress').count(),
             'overdue': milestones.filter(deadline__lt=timezone.now().date(), status__in=['not_started', 'in_progress']).count()
         }
+    
+class FlightmapDraftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlightmapDraft
+        fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
 
 # Dashboard-specific serializers
 class DashboardMilestoneSerializer(serializers.ModelSerializer):

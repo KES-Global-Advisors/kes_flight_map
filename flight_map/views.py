@@ -14,7 +14,7 @@ from .models import (
     Flightmap, Strategy, Program, Workstream,
     Milestone, Activity, StrategicGoal,
     MilestoneContributor, ActivityContributor,
-    NodePosition,
+    NodePosition, FlightmapDraft,
 )
 from .serializers import (
     FlightmapSerializer, StrategySerializer,
@@ -24,6 +24,7 @@ from .serializers import (
     MilestoneStatusSerializer, ActivityStatusSerializer,
     StrategicGoalSerializer, MilestoneContributorSerializer,
     ActivityContributorSerializer, NodePositionSerializer,
+    FlightmapDraftSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
@@ -168,6 +169,36 @@ class FlightmapViewSet(viewsets.ModelViewSet):
                         })
         
         return Response(sorted(timeline_events, key=lambda x: x['date']))
+
+class FlightmapDraftViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing flightmap creation drafts.
+    Users can only see and manage their own drafts.
+    """
+    serializer_class = FlightmapDraftSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter drafts to only show those belonging to the current user"""
+        return FlightmapDraft.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        """Associate the draft with the current user"""
+        serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['delete'])
+    def delete_old_drafts(self, request):
+        """Delete drafts older than 30 days"""
+        cutoff_date = timezone.now() - timedelta(days=30)
+        deleted_count = FlightmapDraft.objects.filter(
+            user=request.user,
+            updated_at__lt=cutoff_date
+        ).delete()[0]
+        
+        return Response({
+            'message': f'Deleted {deleted_count} old drafts',
+            'status': 'success'
+        })
 
 class ProgressDashboardView(APIView):
     permission_classes = [IsAuthenticated]

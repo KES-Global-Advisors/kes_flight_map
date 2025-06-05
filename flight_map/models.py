@@ -60,6 +60,22 @@ class Flightmap(models.Model):
         unique_together = ('name', 'owner')
         ordering = ['-created_at']
 
+class FlightmapDraft(models.Model):
+    """Stores incomplete flightmap creation sessions"""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="flightmap_drafts")
+    name = models.CharField(max_length=255, help_text="Draft session name")
+    current_step = models.CharField(max_length=20, default='flightmaps')
+    form_data = models.JSONField(default=dict)
+    completed_steps = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-updated_at']
+        
+    def __str__(self):
+        return f"{self.user.username} - {self.name} (Step: {self.current_step})"
+
 class Strategy(models.Model):
     """Strategic initiative container"""
     flightmap = models.ForeignKey(Flightmap, on_delete=models.CASCADE, related_name="strategies")
