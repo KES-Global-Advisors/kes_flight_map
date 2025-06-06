@@ -186,6 +186,18 @@ class FlightmapDraftViewSet(viewsets.ModelViewSet):
         """Associate the draft with the current user"""
         serializer.save(user=self.request.user)
     
+    def perform_update(self, serializer):
+        """Update the draft name if flightmap name changes"""
+        form_data = self.request.data.get('form_data', {})
+        flightmap_data = form_data.get('flightmaps', {})
+        
+        # Auto-update draft name based on flightmap name
+        if isinstance(flightmap_data, dict) and flightmap_data.get('name'):
+            draft_name = f"{flightmap_data['name']} - Draft"
+            serializer.save(name=draft_name)
+        else:
+            serializer.save()
+    
     @action(detail=False, methods=['delete'])
     def delete_old_drafts(self, request):
         """Delete drafts older than 30 days"""
@@ -199,6 +211,20 @@ class FlightmapDraftViewSet(viewsets.ModelViewSet):
             'message': f'Deleted {deleted_count} old drafts',
             'status': 'success'
         })
+    
+    @action(detail=False, methods=['get'])
+    def cleanup_completed(self, request):
+        """Remove drafts that have been completed"""
+        completed_drafts = self.get_queryset().filter(
+            completed_steps__contains=[True, True, True, True, True, True, True]
+        )
+        deleted_count = completed_drafts.delete()[0]
+        
+        return Response({
+            'message': f'Cleaned up {deleted_count} completed drafts',
+            'status': 'success'
+        })
+
 
 class ProgressDashboardView(APIView):
     permission_classes = [IsAuthenticated]

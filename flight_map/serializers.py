@@ -319,10 +319,21 @@ class FlightmapSerializer(serializers.ModelSerializer):
         }
     
 class FlightmapDraftSerializer(serializers.ModelSerializer):
+    progress_percentage = serializers.SerializerMethodField()
+    
     class Meta:
         model = FlightmapDraft
-        fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 
+                  'created_at', 'updated_at', 'progress_percentage']
         read_only_fields = ['created_at', 'updated_at']
+    
+    def get_progress_percentage(self, obj):
+        """Calculate progress based on completed steps"""
+        if obj.completed_steps:
+            completed_count = sum(1 for step in obj.completed_steps if step)
+            total_steps = 7  # Total number of steps in the wizard
+            return round((completed_count / total_steps) * 100)
+        return 0
 
 # Dashboard-specific serializers
 class DashboardMilestoneSerializer(serializers.ModelSerializer):
