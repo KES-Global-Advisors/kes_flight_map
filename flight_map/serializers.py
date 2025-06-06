@@ -304,10 +304,25 @@ class StrategySerializer(serializers.ModelSerializer):
 class FlightmapSerializer(serializers.ModelSerializer):
     strategies = StrategySerializer(many=True, read_only=True)
     milestone_summary = serializers.SerializerMethodField()
+    is_draft = serializers.BooleanField(default=True)
+    draft_badge = serializers.SerializerMethodField(required=False, allow_null=True)
 
     class Meta:
         model = Flightmap
         fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'completed_at']
+
+    def get_draft_badge(self, obj):
+        """Return draft status for frontend badge display"""
+        if obj.is_draft:
+            return {
+                'show': True,
+                'text': 'Draft',
+                'color': 'yellow'
+            }
+        return {
+            'show': False
+        }
 
     def get_milestone_summary(self, obj):
         milestones = Milestone.objects.filter(workstream__program__strategy__flightmap=obj)
@@ -320,11 +335,11 @@ class FlightmapSerializer(serializers.ModelSerializer):
     
 class FlightmapDraftSerializer(serializers.ModelSerializer):
     progress_percentage = serializers.SerializerMethodField()
-    
+    flightmap_id = serializers.IntegerField(required=False, allow_null=True)
     class Meta:
         model = FlightmapDraft
         fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 
-                  'created_at', 'updated_at', 'progress_percentage']
+                  'created_at', 'updated_at', 'progress_percentage', 'flightmap_id']
         read_only_fields = ['created_at', 'updated_at']
     
     def get_progress_percentage(self, obj):

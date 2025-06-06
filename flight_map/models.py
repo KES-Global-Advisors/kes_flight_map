@@ -53,9 +53,13 @@ class Flightmap(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return self.name
+    # fields for draft tracking
+    is_draft = models.BooleanField(default=False, help_text="Whether this flightmap is still in draft status")
+    draft_id = models.IntegerField(null=True, blank=True, help_text="ID of the draft this was created from")
+    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the flightmap was completed")
 
+    def __str__(self):
+        return f"{self.name}{' (Draft)' if self.is_draft else ''}"
     class Meta:
         unique_together = ('name', 'owner')
         ordering = ['-created_at']

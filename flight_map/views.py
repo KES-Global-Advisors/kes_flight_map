@@ -118,10 +118,10 @@ class FlightmapViewSet(viewsets.ModelViewSet):
     serializer_class = FlightmapSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['owner']
+    filterset_fields = ['owner', 'is_draft']  # Add is_draft to filterset_fields
 
     def get_queryset(self):
-        return Flightmap.objects.prefetch_related(
+        queryset = Flightmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
                      queryset=Milestone.objects.annotate_progress().distinct()),
             Prefetch('strategies__programs__workstreams__activities',
@@ -138,6 +138,53 @@ class FlightmapViewSet(viewsets.ModelViewSet):
             Q(strategies__programs__workstreams__team_members=self.request.user)
         ).distinct()
 
+                # Allow filtering by draft status through query params
+        show_drafts = self.request.query_params.get('show_drafts', 'true').lower()
+        if show_drafts == 'false':
+            queryset = queryset.filter(is_draft=False)
+        elif show_drafts == 'only':
+            queryset = queryset.filter(is_draft=True)
+        # Default 'true' shows all flightmaps
+        
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def drafts(self, request):
+        """Get only draft flightmaps"""
+        draft_flightmaps = self.get_queryset().filter(is_draft=True)
+        serializer = self.get_serializer(draft_flightmaps, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def completed(self, request):
+        """Get only completed (non-draft) flightmaps"""
+        completed_flightmaps = self.get_queryset().filter(is_draft=False)
+        serializer = self.get_serializer(completed_flightmaps, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def mark_complete(self, request, pk=None):
+        """Mark a draft flightmap as complete"""
+        flightmap = self.get_object()
+        if not flightmap.is_draft:
+            return Response(
+                {'error': 'This flightmap is already marked as complete'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        flightmap.is_draft = False
+        flightmap.completed_at = timezone.now()
+        flightmap.save()
+        
+        # Delete associated draft if it exists
+        if flightmap.draft_id:
+            try:
+                FlightmapDraft.objects.filter(id=flightmap.draft_id).delete()
+            except:
+                pass  # Draft might already be deleted
+        
+        serializer = self.get_serializer(flightmap)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
     def timeline(self, request, pk=None):
