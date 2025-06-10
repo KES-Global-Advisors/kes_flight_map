@@ -3,7 +3,7 @@ from .models import (
     Flightmap, Strategy, StrategicGoal, Program,
     Workstream, Milestone, Activity,
     MilestoneContributor, ActivityContributor,
-    NodePosition
+    NodePosition, FlightmapDraft,
 )
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -304,10 +304,25 @@ class StrategySerializer(serializers.ModelSerializer):
 class FlightmapSerializer(serializers.ModelSerializer):
     strategies = StrategySerializer(many=True, read_only=True)
     milestone_summary = serializers.SerializerMethodField()
+    is_draft = serializers.BooleanField(default=True)
+    draft_badge = serializers.SerializerMethodField(required=False, allow_null=True)
 
     class Meta:
         model = Flightmap
         fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'completed_at']
+
+    def get_draft_badge(self, obj):
+        """Return draft status for frontend badge display"""
+        if obj.is_draft:
+            return {
+                'show': True,
+                'text': 'Draft',
+                'color': 'yellow'
+            }
+        return {
+            'show': False
+        }
 
     def get_milestone_summary(self, obj):
         milestones = Milestone.objects.filter(workstream__program__strategy__flightmap=obj)
@@ -317,6 +332,23 @@ class FlightmapSerializer(serializers.ModelSerializer):
             'in_progress': milestones.filter(status='in_progress').count(),
             'overdue': milestones.filter(deadline__lt=timezone.now().date(), status__in=['not_started', 'in_progress']).count()
         }
+    
+class FlightmapDraftSerializer(serializers.ModelSerializer):
+    progress_percentage = serializers.SerializerMethodField()
+    flightmap_id = serializers.IntegerField(required=False, allow_null=True)
+    class Meta:
+        model = FlightmapDraft
+        fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 
+                  'created_at', 'updated_at', 'progress_percentage', 'flightmap_id']
+        read_only_fields = ['created_at', 'updated_at']
+    
+    def get_progress_percentage(self, obj):
+        """Calculate progress based on completed steps"""
+        if obj.completed_steps:
+            completed_count = sum(1 for step in obj.completed_steps if step)
+            total_steps = 7  # Total number of steps in the wizard
+            return round((completed_count / total_steps) * 100)
+        return 0
 
 # Dashboard-specific serializers
 class DashboardMilestoneSerializer(serializers.ModelSerializer):

@@ -11,7 +11,7 @@ from .views import (
     DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
     ResourceAllocationView, MilestoneContributorCreateView,
     ActivityContributorCreateView, PerformanceDashboardView,
-    NodePositionViewSet,
+    NodePositionViewSet, FlightmapDraftViewSet,
 )
 
 router = DefaultRouter()
@@ -19,6 +19,7 @@ router.register(r'flightmaps', FlightmapViewSet, basename='flightmap')
 router.register(r'milestones', MilestoneViewSet, basename='milestone')
 router.register(r'activities', ActivityViewSet, basename='activity')
 router.register(r'positions', NodePositionViewSet, basename='position')
+router.register(r'flightmap-drafts', FlightmapDraftViewSet, basename='flightmap-draft')
 
 urlpatterns = [
     # New viewsets
