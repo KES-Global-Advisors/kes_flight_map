@@ -124,8 +124,10 @@ class FlightmapViewSet(viewsets.ModelViewSet):
         queryset = Flightmap.objects.prefetch_related(
             Prefetch('strategies__programs__workstreams__milestones',
                      queryset=Milestone.objects.annotate_progress().distinct()),
-            Prefetch('strategies__programs__workstreams__activities',
-                     queryset=Activity.objects.annotate_delay().distinct())
+            Prefetch('strategies__programs__workstreams__milestones__source_activities',
+                     queryset=Activity.objects.annotate_delay().distinct()),
+            Prefetch('strategies__programs__workstreams__milestones__target_activities',
+                     queryset=Activity.objects.annotate_delay().distinct()),
         ).filter(
             Q(owner=self.request.user) |
             Q(strategies__executive_sponsors=self.request.user) |
@@ -204,17 +206,18 @@ class FlightmapViewSet(viewsets.ModelViewSet):
                             'status': milestone.status,
                             'progress': milestone.current_progress
                         })
-                    # Activities
-                    for activity in workstream.activities.all():
-                        timeline_events.append({
-                            'type': 'activity',
-                            'id': activity.id,
-                            'name': activity.name,
-                            'date': activity.target_end_date,
-                            'status': activity.status,
-                            'milestone': activity.milestone.id if activity.milestone else None
-                        })
-        
+                        # Activities where this milestone is the source
+                        for activity in milestone.source_activities.all():
+                            timeline_events.append({
+                                'type': 'activity',
+                                'id': activity.id,
+                                'name': activity.name,
+                                'date': activity.target_end_date,
+                                'status': activity.status,
+                                'source_milestone': activity.source_milestone.id,
+                                'target_milestone': activity.target_milestone.id if activity.target_milestone else None
+                            })
+
         return Response(sorted(timeline_events, key=lambda x: x['date']))
 
 class FlightmapDraftViewSet(viewsets.ModelViewSet):
@@ -300,8 +303,6 @@ class ProgressDashboardView(APIView):
                             output_field=CharField()
                         )
                     )),
-            Prefetch('strategies__programs__workstreams__activities',
-                    queryset=Activity.objects.select_related('milestone'))
         ).distinct()
 
         response_data = {
@@ -336,7 +337,9 @@ class ProgressDashboardView(APIView):
     def get_contributions(self, flightmaps):
         contributors = User.objects.filter(
             Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__in=flightmaps) |
-            Q(activitycontributor__activity__workstream__program__strategy__flightmap__in=flightmaps)
+            # Update to use the new milestone relationships
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__in=flightmaps) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__in=flightmaps)
         ).distinct().annotate(
             total_contributions=Count(
                 'milestonecontributor',
@@ -395,15 +398,15 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def insights(self, request, pk=None):
         milestone = get_object_or_404(Milestone.objects.annotate(
-            total_tasks=Count('activities'),
-            completed_tasks=Count('activities', filter=Q(activities__status='completed')),
+            total_tasks=Count('source_activities'),
+            completed_tasks=Count('source_activities', filter=Q(source_activities__status='completed')),
             avg_completion_time=Avg(
-                F('activities__completed_date') - F('activities__target_start_date'),
-                filter=Q(activities__status='completed')
+                F('source_activities__completed_date') - F('source_activities__target_start_date'),
+                filter=Q(source_activities__status='completed')
             ),
             delay_days=Avg(
-                F('activities__completed_date') - F('activities__target_end_date'),
-                filter=Q(activities__completed_date__gt=F('activities__target_end_date'))
+                F('source_activities__completed_date') - F('source_activities__target_end_date'),
+                filter=Q(source_activities__completed_date__gt=F('source_activities__target_end_date'))
             )
         ), pk=pk)
 
@@ -413,7 +416,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 'avg_completion_time': milestone.avg_completion_time,
                 'average_delay': milestone.delay_days
             },
-            'activities': ActivitySerializer(milestone.activities.all(), many=True).data
+            'activities': ActivitySerializer(milestone.source_activities.all(), many=True).data
         })
 
     @action(detail=True, methods=['patch'])
@@ -439,47 +442,47 @@ class ActivityViewSet(viewsets.ModelViewSet):
         'status': ['exact', 'in'],
         'target_start_date': ['gte', 'lte'],
         'target_end_date': ['gte', 'lte'],
-        'milestone': ['exact']
+        'source_milestone': ['exact'],
+        'target_milestone': ['exact'],
     }
 
     def get_queryset(self):
         base_qs = Activity.objects.annotate_delay()
-
-        # Activities attached to a workstream or milestone.
+        user = self.request.user
+    
+        # Activities are now linked through milestones
         related_qs = base_qs.filter(
-            Q(workstream__isnull=False) | Q(milestone__isnull=False)
+            Q(source_milestone__isnull=False) | Q(target_milestone__isnull=False)
         ).filter(
-            Q(workstream__program__strategy__flightmap__owner=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__executive_sponsors=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__strategy_leads=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__communication_leads=self.request.user) |
-            Q(workstream__program__executive_sponsors=self.request.user) |
-            Q(workstream__program__program_leads=self.request.user) |
-            Q(workstream__program__workforce_sponsors=self.request.user) |
-            Q(workstream__workstream_leads=self.request.user) |
-            Q(workstream__team_members=self.request.user) |
-            Q(milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
-            Q(milestone__workstream__program__strategy__flightmap__strategies__executive_sponsors=self.request.user) |
-            Q(milestone__workstream__program__strategy__flightmap__strategies__strategy_leads=self.request.user) |
-            Q(milestone__workstream__program__strategy__flightmap__strategies__communication_leads=self.request.user) |
-            Q(milestone__workstream__program__executive_sponsors=self.request.user) |
-            Q(milestone__workstream__program__program_leads=self.request.user) |
-            Q(milestone__workstream__program__workforce_sponsors=self.request.user) |
-            Q(milestone__workstream__workstream_leads=self.request.user) |
-            Q(milestone__workstream__team_members=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__programs__executive_sponsors=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__programs__program_leads=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__programs__workstreams__workstream_leads=self.request.user) |
-            Q(workstream__program__strategy__flightmap__strategies__programs__workstreams__team_members=self.request.user)
+            # Filter through source milestone's workstream
+            Q(source_milestone__workstream__program__strategy__flightmap__owner=user) |
+            Q(source_milestone__workstream__program__strategy__executive_sponsors=user) |
+            Q(source_milestone__workstream__program__strategy__strategy_leads=user) |
+            Q(source_milestone__workstream__program__strategy__communication_leads=user) |
+            Q(source_milestone__workstream__program__executive_sponsors=user) |
+            Q(source_milestone__workstream__program__program_leads=user) |
+            Q(source_milestone__workstream__program__workforce_sponsors=user) |
+            Q(source_milestone__workstream__workstream_leads=user) |
+            Q(source_milestone__workstream__team_members=user) |
+            # Also filter through target milestone's workstream
+            Q(target_milestone__workstream__program__strategy__flightmap__owner=user) |
+            Q(target_milestone__workstream__program__strategy__executive_sponsors=user) |
+            Q(target_milestone__workstream__program__strategy__strategy_leads=user) |
+            Q(target_milestone__workstream__program__strategy__communication_leads=user) |
+            Q(target_milestone__workstream__program__executive_sponsors=user) |
+            Q(target_milestone__workstream__program__program_leads=user) |
+            Q(target_milestone__workstream__program__workforce_sponsors=user) |
+            Q(target_milestone__workstream__workstream_leads=user) |
+            Q(target_milestone__workstream__team_members=user)
         )
-
-        # Standalone activities: no workstream or milestone, but with updated_by set.
+    
+        # Standalone activities: no source or target milestone, but with updated_by set
         standalone_qs = base_qs.filter(
-            workstream__isnull=True,
-            milestone__isnull=True,
+            source_milestone__isnull=True,
+            target_milestone__isnull=True,
             updated_by__isnull=False
         )
-
+    
         return (related_qs | standalone_qs).distinct()
 
 
@@ -499,7 +502,9 @@ class EmployeeContributionsView(generics.ListAPIView):
     def get_queryset(self):
         return User.objects.filter(
             Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
-            Q(activitycontributor__activity__workstream__program__strategy__flightmap__owner=self.request.user)
+            # Update the activity contributor filter to use the new relationships
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__owner=self.request.user)
         ).distinct().annotate(
             completed_milestones=Count(
                 'milestonecontributor',
@@ -695,8 +700,9 @@ class RiskAssessmentView(APIView):
         for milestone in milestones:
             # Use the milestone property (or annotation) for current progress.
             progress = milestone.current_progress
-            total_activities = milestone.activities.count()
-            overdue_activities = milestone.activities.filter(
+            # Count activities where this milestone is the source
+            total_activities = milestone.source_activities.count()
+            overdue_activities = milestone.source_activities.filter(
                 status__in=['not_started', 'in_progress'],
                 target_end_date__lt=today
             ).count()
@@ -742,7 +748,9 @@ class ResourceAllocationView(APIView):
         today = timezone.now().date()
         # Filter users associated with activities in flightmaps owned by the current user.
         users = User.objects.filter(
-            Q(activitycontributor__activity__workstream__program__strategy__flightmap__owner=request.user)
+            # Update to use the new relationships through milestones
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__owner=request.user) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__owner=request.user)
         ).distinct().annotate(
             current_tasks=Count(
                 'activitycontributor',
