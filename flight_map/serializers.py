@@ -83,7 +83,19 @@ class ActivitySerializer(serializers.ModelSerializer):
     actual_duration = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
 
-        # New fields to return additional links
+    # NEW: Source and target milestone fields
+    source_milestone = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        required=True,
+        help_text="The milestone where this activity originates"
+    )
+    target_milestone = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.all(),
+        required=True,
+        help_text="The milestones this activity connects to within the same workstream"
+    )
+
+    # Cross-workstream support fields (maintain existing functionality)
     supported_milestones = serializers.PrimaryKeyRelatedField(
         queryset=Milestone.objects.all(),
         many=True,
@@ -119,9 +131,10 @@ class ActivitySerializer(serializers.ModelSerializer):
         return False
 
     def get_strategic_goals(self, obj):
-        if obj.milestone:
+        # Get strategic goals from source milestone
+        if obj.source_milestone:
             return StrategicGoalSerializer(
-                obj.milestone.strategic_goals.all(),
+                obj.source_milestone.strategic_goals.all(),
                 many=True,
                 context=self.context
             ).data
@@ -147,6 +160,23 @@ class ActivitySerializer(serializers.ModelSerializer):
                     "Completion date cannot be before target start date"
                 )
 
+        # ✅ NEW: Clean validation using milestone relationships
+        source_milestone = data.get('source_milestone')
+        target_milestone = data.get('target_milestone')
+        
+        if source_milestone and target_milestone:
+            # Validate same workstream constraint
+            if source_milestone.workstream != target_milestone.workstream:
+                raise serializers.ValidationError(
+                    "Source and target milestones must be in the same workstream"
+                )
+        
+            # Validate source != target
+            if source_milestone == target_milestone:
+                raise serializers.ValidationError(
+                    "Source milestone cannot be the same as target milestone"
+                )
+
         return data
 
     def create(self, validated_data):
@@ -168,7 +198,10 @@ class ActivitySerializer(serializers.ModelSerializer):
 
 class MilestoneSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=Milestone.STATUS_CHOICES)
-    activities = ActivitySerializer(many=True, read_only=True)
+    # Activities related to this milestone
+    source_activities = ActivitySerializer(many=True, read_only=True)
+    target_activities = ActivitySerializer(many=True, read_only=True)
+
     contributors = MilestoneContributorSerializer(many=True, read_only=True)
     strategic_goals = StrategicGoalSerializer(many=True, read_only=True)
     strategic_goal_ids = serializers.PrimaryKeyRelatedField(
@@ -187,7 +220,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'completed_date': {'read_only': True},
             'workstream': {'required': False, 'allow_null': True},
-            'parent_milestone': {'required': False, 'allow_null': True},
         }
 
     def validate(self, data):
@@ -231,8 +263,11 @@ class WorkstreamSerializer(serializers.ModelSerializer):
         return MilestoneSerializer(unique, many=True, context=self.context).data
 
     def get_activities(self, obj):
-        qs = obj.activities.filter(milestone__isnull=True)
-        unique = {a.id: a for a in qs}.values()
+        # Get activities from all milestones in this workstream
+        milestone_ids = obj.milestones.values_list('id', flat=True)
+        # Get activities where any milestone in this workstream is the source
+        activities = Activity.objects.filter(source_milestone__in=milestone_ids).distinct()
+        unique = {a.id: a for a in activities}.values()
         return ActivitySerializer(unique, many=True, context=self.context).data
     
     def get_contributors(self, obj):

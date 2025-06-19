@@ -15,13 +15,15 @@ User = get_user_model()
 
 class MilestoneQuerySet(models.QuerySet):
     def annotate_progress(self):
+        # Activities can be related via source_activities or target_activities
+        # For progress calculation, we should consider activities where this milestone is the source
         return self.annotate(
             calculated_progress=Case(
-                When(activities__isnull=True, then=Value(0.0)),
+                When(source_activities__isnull=True, then=Value(0.0)),
                 default=100.0 * Count(
-                    'activities',
-                    filter=Q(activities__status='completed')
-                ) / Greatest(Count('activities'), 1),
+                    'source_activities',
+                    filter=Q(source_activities__status='completed')
+                ) / Greatest(Count('source_activities'), 1),
                 output_field=FloatField()
             )
         )
@@ -210,16 +212,6 @@ class Milestone(models.Model):
         help_text="Milestones that must be completed before this milestone can be achieved."
     )
 
-    # Add a parent milestone field:
-    parent_milestone = models.ForeignKey(
-        'self',
-        null=True,
-        blank=True,
-        related_name='child_milestones',
-        on_delete=models.SET_NULL,
-        help_text="The direct parent milestone that this milestone depends on."
-    )
-
     # capture who updated this milestone
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -250,8 +242,9 @@ class Milestone(models.Model):
         """
         if hasattr(self, 'calculated_progress'):
             return self.calculated_progress
-            
-        activities = self.activities.all()
+
+        # Get activities where this milestone is the source
+        activities = self.source_activities.all()
         if not activities.exists():
             return 0
         completed = activities.filter(status='completed').count()
@@ -292,8 +285,20 @@ class Activity(models.Model):
         ('completed', 'Completed'),
     ]
 
-    workstream = models.ForeignKey(Workstream, on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
-    milestone = models.ForeignKey(Milestone, on_delete=models.SET_NULL, null=True, blank=True, related_name="activities")
+        # NEW: Explicit source and target milestone relationships
+    source_milestone = models.ForeignKey(
+        Milestone, 
+        on_delete=models.CASCADE, 
+        related_name="source_activities",
+        help_text="The milestone where this activity originates"
+    )
+
+    target_milestone = models.ForeignKey(
+        Milestone,
+        on_delete=models.CASCADE, 
+        related_name="target_activities", 
+        help_text="The milestone this activity connects to within the same workstream"
+    )
     name = models.CharField(max_length=255)
     priority = models.IntegerField(choices=[(1, "High"), (2, "Medium"), (3, "Low")])
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started', db_index=True)
@@ -355,11 +360,25 @@ class Activity(models.Model):
         super().save(*args, **kwargs)
 
     def clean(self):
-        all_related = (self.prerequisite_activities.all() | 
-                      self.parallel_activities.all() |
-                      self.successive_activities.all())
-        if self in all_related:
-            raise ValidationError("Activity cannot reference itself in dependencies")
+        # Validate source and target milestones are in same workstream
+        if self.source_milestone and self.target_milestone:
+            if self.source_milestone.workstream != self.target_milestone.workstream:
+                raise ValidationError("Source milestone and target milestone must be in the same workstream")
+        
+        # Validate source is not the same as target milestone
+        if self.source_milestone and self.target_milestone and self.source_milestone == self.target_milestone:
+            raise ValidationError("Source milestone cannot be the same as target milestone")
+        
+        # Validate self-referencing in dependencies
+        all_related = set()
+        if self.pk:  # Only check if the activity has been saved
+            all_related = (self.prerequisite_activities.all() | 
+                          self.parallel_activities.all() |
+                          self.successive_activities.all())
+            if self in all_related:
+                raise ValidationError("Activity cannot reference itself in dependencies")
+        
+        # Date validations
         if self.actual_start_date and self.target_start_date:
             if self.actual_start_date < self.target_start_date:
                 raise ValidationError("Actual start cannot be before target start")
@@ -367,10 +386,12 @@ class Activity(models.Model):
             raise ValidationError("Target start date must be before end date")
         if self.completed_date and self.completed_date < self.target_start_date:
             raise ValidationError("Completion date cannot be before target start date")
-        if self.workstream is not None and self.milestone is not None:
-            raise ValidationError("An activity should not be both under a milestone and directly under a workstream")
     
-
+    @property
+    def workstream(self):
+        """Convenience property to get workstream through source milestone"""
+        return self.source_milestone.workstream if self.source_milestone else None
+    
     class Meta:
         verbose_name = "Activity"
         verbose_name_plural = "Activities"
