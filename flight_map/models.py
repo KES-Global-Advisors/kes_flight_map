@@ -46,31 +46,45 @@ class ActivityQuerySet(models.QuerySet):
                 output_field=IntegerField()
             )
         )
-    
-class Flightmap(models.Model):
-    """Central flightmap container for all components"""
+
+class Strategy(models.Model):
+    """Strategic initiative container (formerly combined Flightmap + Strategy)"""
+    # Core Strategy fields
     name = models.CharField(max_length=255)
+    tagline = models.CharField(max_length=255, blank=True, null=True)
+    vision = models.TextField()
+    time_horizon = models.DateField()
+    
+    # Flightmap fields merged in
     description = models.TextField(blank=True, null=True)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_flightmaps")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_strategies")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    # fields for draft tracking
-    is_draft = models.BooleanField(default=False, help_text="Whether this flightmap is still in draft status")
+    
+    # Draft-related fields (merged from Flightmap)
+    is_draft = models.BooleanField(default=False, help_text="Whether this strategy is still in draft status")
     draft_id = models.IntegerField(null=True, blank=True, help_text="ID of the draft this was created from")
-    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the flightmap was completed")
+    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the strategy was completed")
+
+    # Governance
+    executive_sponsors = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_executive_sponsors")
+    strategy_leads = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_leads")
+    communication_leads = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_communication_leads")
 
     def __str__(self):
         return f"{self.name}{' (Draft)' if self.is_draft else ''}"
+    
     class Meta:
         unique_together = ('name', 'owner')
         ordering = ['-created_at']
+        verbose_name = "Strategy"
+        verbose_name_plural = "Strategies"
 
-class FlightmapDraft(models.Model):
-    """Stores incomplete flightmap creation sessions"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="flightmap_drafts")
+class StrategyDraft(models.Model):
+    """Stores incomplete strategy creation sessions"""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strategy_drafts")
     name = models.CharField(max_length=255, help_text="Draft session name")
-    current_step = models.CharField(max_length=20, default='flightmaps')
+    current_step = models.CharField(max_length=20, default='strategies')
     form_data = models.JSONField(default=dict)
     completed_steps = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -81,33 +95,6 @@ class FlightmapDraft(models.Model):
         
     def __str__(self):
         return f"{self.user.username} - {self.name} (Step: {self.current_step})"
-
-class Strategy(models.Model):
-    """Strategic initiative container"""
-    flightmap = models.ForeignKey(Flightmap, on_delete=models.CASCADE, related_name="strategies")
-    name = models.CharField(max_length=255)
-    tagline = models.CharField(max_length=255, blank=True, null=True)
-    vision = models.TextField()
-    time_horizon = models.DateField()
-
-    # Governance
-    executive_sponsors = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_executive_sponsors")
-    strategy_leads = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_leads")
-    communication_leads = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="strategy_communication_leads")
-
-    def __str__(self):
-        return self.name
-
-    def clean(self):
-        if self.flightmap:
-            latest_program_date = self.programs.aggregate(models.Max('time_horizon'))['time_horizon__max']
-            if latest_program_date and self.time_horizon < latest_program_date:
-                raise ValidationError("Strategy time horizon cannot be earlier than its latest program's horizon.")
-
-    class Meta:
-        verbose_name = "Strategy"
-        verbose_name_plural = "Strategies"
-        ordering = ["-time_horizon"]
 
 class StrategicGoal(models.Model):
     STRATEGIC_GOAL_CATEGORIES = [
@@ -405,12 +392,11 @@ class ActivityContributor(models.Model):
         unique_together = ('activity', 'user')
 
 class NodePosition(models.Model):
-    FLIGHTMAP = 'flightmap'
     NODE_TYPES = [
         ('workstream', 'Workstream'),
         ('milestone',   'Milestone'),
     ]
-    flightmap   = models.ForeignKey(Flightmap, on_delete=models.CASCADE, related_name="positions")
+    strategy    = models.ForeignKey(Strategy, on_delete=models.CASCADE, related_name="positions")  # Changed from flightmap
     node_type   = models.CharField(max_length=12, choices=NODE_TYPES)
     node_id     = models.CharField(max_length=100)  # e.g. milestone.id or workstream.id
     rel_y       = models.FloatField()    # 0.0–1.0 relative vertical position
@@ -423,5 +409,5 @@ class NodePosition(models.Model):
     original_node_id = models.IntegerField(null=True, blank=True)  # Reference to the original node
     
     # class Meta:
-    #     # Unique constraint needs to include duplicate_key for duplicate nodes
-    #     unique_together = ('flightmap', 'node_type', 'node_id', 'duplicate_key')
+    #     # Unique constraint updated to use strategy instead of flightmap
+    #     unique_together = ('strategy', 'node_type', 'node_id', 'duplicate_key')

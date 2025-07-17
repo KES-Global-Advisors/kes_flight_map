@@ -1,9 +1,9 @@
 from rest_framework import serializers
 from .models import (
-    Flightmap, Strategy, StrategicGoal, Program,
+    Strategy, StrategicGoal, Program,
     Workstream, Milestone, Activity,
     MilestoneContributor, ActivityContributor,
-    NodePosition, FlightmapDraft,
+    NodePosition, StrategyDraft,
 )
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -316,6 +316,9 @@ class ProgramSerializer(serializers.ModelSerializer):
 class StrategySerializer(serializers.ModelSerializer):
     programs = ProgramSerializer(many=True, read_only=True)
     goal_summary = serializers.SerializerMethodField()
+    milestone_summary = serializers.SerializerMethodField()
+    is_draft = serializers.BooleanField(default=True)
+    draft_badge = serializers.SerializerMethodField(required=False, allow_null=True)
     executive_sponsors = serializers.SlugRelatedField(
          many=True, read_only=True, slug_field='username'
     )
@@ -329,24 +332,14 @@ class StrategySerializer(serializers.ModelSerializer):
     class Meta:
         model = Strategy
         fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'completed_at']
 
     def get_goal_summary(self, obj):
         return {
             'business_goals': list(obj.goals.filter(category='business').values_list('goal_text', flat=True)),
             'organizational_goals': list(obj.goals.filter(category='organizational').values_list('goal_text', flat=True))
         }
-
-class FlightmapSerializer(serializers.ModelSerializer):
-    strategies = StrategySerializer(many=True, read_only=True)
-    milestone_summary = serializers.SerializerMethodField()
-    is_draft = serializers.BooleanField(default=True)
-    draft_badge = serializers.SerializerMethodField(required=False, allow_null=True)
-
-    class Meta:
-        model = Flightmap
-        fields = '__all__'
-        read_only_fields = ['created_at', 'updated_at', 'completed_at']
-
+    
     def get_draft_badge(self, obj):
         """Return draft status for frontend badge display"""
         if obj.is_draft:
@@ -360,7 +353,7 @@ class FlightmapSerializer(serializers.ModelSerializer):
         }
 
     def get_milestone_summary(self, obj):
-        milestones = Milestone.objects.filter(workstream__program__strategy__flightmap=obj)
+        milestones = Milestone.objects.filter(workstream__program__strategy=obj)
         return {
             'total': milestones.count(),
             'completed': milestones.filter(status='completed').count(),
@@ -368,20 +361,21 @@ class FlightmapSerializer(serializers.ModelSerializer):
             'overdue': milestones.filter(deadline__lt=timezone.now().date(), status__in=['not_started', 'in_progress']).count()
         }
     
-class FlightmapDraftSerializer(serializers.ModelSerializer):
+class StrategyDraftSerializer(serializers.ModelSerializer):
     progress_percentage = serializers.SerializerMethodField()
-    flightmap_id = serializers.IntegerField(required=False, allow_null=True)
+    strategy_id = serializers.IntegerField(required=False, allow_null=True)
+    
     class Meta:
-        model = FlightmapDraft
+        model = StrategyDraft
         fields = ['id', 'name', 'current_step', 'form_data', 'completed_steps', 
-                  'created_at', 'updated_at', 'progress_percentage', 'flightmap_id']
+                  'created_at', 'updated_at', 'progress_percentage', 'strategy_id']
         read_only_fields = ['created_at', 'updated_at']
     
     def get_progress_percentage(self, obj):
         """Calculate progress based on completed steps"""
         if obj.completed_steps:
             completed_count = sum(1 for step in obj.completed_steps if step)
-            total_steps = 7  # Total number of steps in the wizard
+            total_steps = 6  # Updated: removed flightmap step
             return round((completed_count / total_steps) * 100)
         return 0
 
@@ -454,5 +448,5 @@ class ActivityStatusSerializer(serializers.ModelSerializer):
 class NodePositionSerializer(serializers.ModelSerializer):
     class Meta:
         model = NodePosition
-        fields = ['id', 'flightmap', 'node_type', 'node_id', 'rel_y', 'updated_at', 
+        fields = ['id', 'strategy', 'node_type', 'node_id', 'rel_y', 'updated_at', 
           'is_duplicate', 'duplicate_key', 'original_node_id']

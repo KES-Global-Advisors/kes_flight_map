@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    FlightmapViewSet, MilestoneViewSet, ActivityViewSet,
+    StrategyViewSet, MilestoneViewSet, ActivityViewSet,
     ProgressDashboardView, EmployeeContributionsView,
     StrategicAlignmentView,
     StrategyListCreateView, StrategyRetrieveUpdateDestroyView,
@@ -11,15 +11,15 @@ from .views import (
     DashboardMilestoneView, TrendAnalysisView, RiskAssessmentView,
     ResourceAllocationView, MilestoneContributorCreateView,
     ActivityContributorCreateView, PerformanceDashboardView,
-    NodePositionViewSet, FlightmapDraftViewSet,
+    NodePositionViewSet, StrategyDraftViewSet,
 )
 
 router = DefaultRouter()
-router.register(r'flightmaps', FlightmapViewSet, basename='flightmap')
+router.register(r'flightmaps', StrategyViewSet, basename='flightmap')
 router.register(r'milestones', MilestoneViewSet, basename='milestone')
 router.register(r'activities', ActivityViewSet, basename='activity')
 router.register(r'positions', NodePositionViewSet, basename='position')
-router.register(r'flightmap-drafts', FlightmapDraftViewSet, basename='flightmap-draft')
+router.register(r'flightmap-drafts', StrategyDraftViewSet, basename='flightmap-draft')
 
 urlpatterns = [
     # New viewsets

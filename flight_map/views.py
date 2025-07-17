@@ -11,20 +11,20 @@ from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from datetime import timedelta
 from .models import (
-    Flightmap, Strategy, Program, Workstream,
+    Strategy, Program, Workstream,
     Milestone, Activity, StrategicGoal,
     MilestoneContributor, ActivityContributor,
-    NodePosition, FlightmapDraft,
+    NodePosition, StrategyDraft,
 )
 from .serializers import (
-    FlightmapSerializer, StrategySerializer,
+    StrategySerializer,
     ProgramSerializer, WorkstreamSerializer,
     MilestoneSerializer, ActivitySerializer,
     DashboardMilestoneSerializer, EmployeeContributionSerializer,
     MilestoneStatusSerializer, ActivityStatusSerializer,
     StrategicGoalSerializer, MilestoneContributorSerializer,
     ActivityContributorSerializer, NodePositionSerializer,
-    FlightmapDraftSerializer,
+    StrategyDraftSerializer,
 )
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import ValidationError
@@ -51,6 +51,166 @@ class StrategyRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Strategy.objects.all()
     serializer_class = StrategySerializer
     permission_classes = [IsAuthenticated]
+
+class StrategyViewSet(viewsets.ModelViewSet):
+    serializer_class = StrategySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['owner', 'is_draft']  # Add is_draft to filterset_fields
+
+    def get_queryset(self):
+        queryset = Strategy.objects.prefetch_related(
+            Prefetch('programs__workstreams__milestones',
+                     queryset=Milestone.objects.annotate_progress().distinct()),
+            Prefetch('programs__workstreams__milestones__source_activities',
+                     queryset=Activity.objects.annotate_delay().distinct()),
+            Prefetch('programs__workstreams__milestones__target_activities',
+                     queryset=Activity.objects.annotate_delay().distinct()),
+        ).filter(
+            Q(owner=self.request.user) |
+            Q(executive_sponsors=self.request.user) |
+            Q(strategy_leads=self.request.user) |
+            Q(communication_leads=self.request.user) |
+            Q(programs__executive_sponsors=self.request.user) |
+            Q(programs__program_leads=self.request.user) |
+            Q(programs__workforce_sponsors=self.request.user) |
+            Q(programs__workstreams__workstream_leads=self.request.user) |
+            Q(programs__workstreams__team_members=self.request.user)
+        ).distinct()
+
+        # Allow filtering by draft status through query params
+        show_drafts = self.request.query_params.get('show_drafts', 'true').lower()
+        if show_drafts == 'false':
+            queryset = queryset.filter(is_draft=False)
+        elif show_drafts == 'only':
+            queryset = queryset.filter(is_draft=True)
+        # Default 'true' shows all strategies
+        
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def drafts(self, request):
+        """Get only draft strategies"""
+        draft_strategies = self.get_queryset().filter(is_draft=True)
+        serializer = self.get_serializer(draft_strategies, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def completed(self, request):
+        """Get only completed (non-draft) strategies"""
+        completed_strategies = self.get_queryset().filter(is_draft=False)
+        serializer = self.get_serializer(completed_strategies, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def mark_complete(self, request, pk=None):
+        """Mark a draft strategy as complete"""
+        strategy = self.get_object()
+        if not strategy.is_draft:
+            return Response(
+                {'error': 'This strategy is already marked as complete'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        strategy.is_draft = False
+        strategy.completed_at = timezone.now()
+        strategy.save()
+        
+        # Delete associated draft if it exists
+        if strategy.draft_id:
+            try:
+                StrategyDraft.objects.filter(id=strategy.draft_id).delete()
+            except:
+                pass  # Draft might already be deleted
+        
+        serializer = self.get_serializer(strategy)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def timeline(self, request, pk=None):
+        strategy = self.get_object()
+        timeline_events = []
+
+        for program in strategy.programs.all():
+            for workstream in program.workstreams.all():
+                # Milestones
+                for milestone in workstream.milestones.all():
+                    timeline_events.append({
+                        'type': 'milestone',
+                        'id': milestone.id,
+                        'name': milestone.name,
+                        'date': milestone.deadline,
+                        'status': milestone.status,
+                        'progress': milestone.current_progress
+                    })
+                    # Activities where this milestone is the source
+                    for activity in milestone.source_activities.all():
+                        timeline_events.append({
+                            'type': 'activity',
+                            'id': activity.id,
+                            'name': activity.name,
+                            'date': activity.target_end_date,
+                            'status': activity.status,
+                            'source_milestone': activity.source_milestone.id,
+                            'target_milestone': activity.target_milestone.id if activity.target_milestone else None
+                        })
+
+        return Response(sorted(timeline_events, key=lambda x: x['date']))
+
+class StrategyDraftViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing strategy creation drafts.
+    Users can only see and manage their own drafts.
+    """
+    serializer_class = StrategyDraftSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter drafts to only show those belonging to the current user"""
+        return StrategyDraft.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        """Associate the draft with the current user"""
+        serializer.save(user=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Update the draft name if strategy name changes"""
+        form_data = self.request.data.get('form_data', {})
+        strategy_data = form_data.get('strategies', {})
+        
+        # Auto-update draft name based on strategy name
+        if isinstance(strategy_data, dict) and strategy_data.get('name'):
+            draft_name = f"{strategy_data['name']} - Draft"
+            serializer.save(name=draft_name)
+        else:
+            serializer.save()
+    
+    @action(detail=False, methods=['delete'])
+    def delete_old_drafts(self, request):
+        """Delete drafts older than 30 days"""
+        cutoff_date = timezone.now() - timedelta(days=30)
+        deleted_count = StrategyDraft.objects.filter(
+            user=request.user,
+            updated_at__lt=cutoff_date
+        ).delete()[0]
+        
+        return Response({
+            'message': f'Deleted {deleted_count} old drafts',
+            'status': 'success'
+        })
+    
+    @action(detail=False, methods=['get'])
+    def cleanup_completed(self, request):
+        """Remove drafts that have been completed"""
+        completed_drafts = self.get_queryset().filter(
+            completed_steps__contains=[True, True, True, True, True, True]  # Updated: 6 steps instead of 7
+        )
+        deleted_count = completed_drafts.delete()[0]
+        
+        return Response({
+            'message': f'Cleaned up {deleted_count} completed drafts',
+            'status': 'success'
+        })
 
 class StrategicGoalListCreateView(generics.ListCreateAPIView):
     """
@@ -112,169 +272,7 @@ class WorkstreamRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
     permission_classes = [IsAuthenticated]
 
 
-
 # Viewsets for models with extended functionality
-class FlightmapViewSet(viewsets.ModelViewSet):
-    serializer_class = FlightmapSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['owner', 'is_draft']  # Add is_draft to filterset_fields
-
-    def get_queryset(self):
-        queryset = Flightmap.objects.prefetch_related(
-            Prefetch('strategies__programs__workstreams__milestones',
-                     queryset=Milestone.objects.annotate_progress().distinct()),
-            Prefetch('strategies__programs__workstreams__milestones__source_activities',
-                     queryset=Activity.objects.annotate_delay().distinct()),
-            Prefetch('strategies__programs__workstreams__milestones__target_activities',
-                     queryset=Activity.objects.annotate_delay().distinct()),
-        ).filter(
-            Q(owner=self.request.user) |
-            Q(strategies__executive_sponsors=self.request.user) |
-            Q(strategies__strategy_leads=self.request.user) |
-            Q(strategies__communication_leads=self.request.user) |
-            Q(strategies__programs__executive_sponsors=self.request.user) |
-            Q(strategies__programs__program_leads=self.request.user) |
-            Q(strategies__programs__workforce_sponsors=self.request.user) |
-            Q(strategies__programs__workstreams__workstream_leads=self.request.user) |
-            Q(strategies__programs__workstreams__team_members=self.request.user)
-        ).distinct()
-
-                # Allow filtering by draft status through query params
-        show_drafts = self.request.query_params.get('show_drafts', 'true').lower()
-        if show_drafts == 'false':
-            queryset = queryset.filter(is_draft=False)
-        elif show_drafts == 'only':
-            queryset = queryset.filter(is_draft=True)
-        # Default 'true' shows all flightmaps
-        
-        return queryset
-
-    @action(detail=False, methods=['get'])
-    def drafts(self, request):
-        """Get only draft flightmaps"""
-        draft_flightmaps = self.get_queryset().filter(is_draft=True)
-        serializer = self.get_serializer(draft_flightmaps, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def completed(self, request):
-        """Get only completed (non-draft) flightmaps"""
-        completed_flightmaps = self.get_queryset().filter(is_draft=False)
-        serializer = self.get_serializer(completed_flightmaps, many=True)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'])
-    def mark_complete(self, request, pk=None):
-        """Mark a draft flightmap as complete"""
-        flightmap = self.get_object()
-        if not flightmap.is_draft:
-            return Response(
-                {'error': 'This flightmap is already marked as complete'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        flightmap.is_draft = False
-        flightmap.completed_at = timezone.now()
-        flightmap.save()
-        
-        # Delete associated draft if it exists
-        if flightmap.draft_id:
-            try:
-                FlightmapDraft.objects.filter(id=flightmap.draft_id).delete()
-            except:
-                pass  # Draft might already be deleted
-        
-        serializer = self.get_serializer(flightmap)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['get'])
-    def timeline(self, request, pk=None):
-        flightmap = self.get_object()
-        timeline_events = []
-
-        for strategy in flightmap.strategies.all():
-            for program in strategy.programs.all():
-                for workstream in program.workstreams.all():
-                    # Milestones
-                    for milestone in workstream.milestones.all():
-                        timeline_events.append({
-                            'type': 'milestone',
-                            'id': milestone.id,
-                            'name': milestone.name,
-                            'date': milestone.deadline,
-                            'status': milestone.status,
-                            'progress': milestone.current_progress
-                        })
-                        # Activities where this milestone is the source
-                        for activity in milestone.source_activities.all():
-                            timeline_events.append({
-                                'type': 'activity',
-                                'id': activity.id,
-                                'name': activity.name,
-                                'date': activity.target_end_date,
-                                'status': activity.status,
-                                'source_milestone': activity.source_milestone.id,
-                                'target_milestone': activity.target_milestone.id if activity.target_milestone else None
-                            })
-
-        return Response(sorted(timeline_events, key=lambda x: x['date']))
-
-class FlightmapDraftViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing flightmap creation drafts.
-    Users can only see and manage their own drafts.
-    """
-    serializer_class = FlightmapDraftSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        """Filter drafts to only show those belonging to the current user"""
-        return FlightmapDraft.objects.filter(user=self.request.user)
-    
-    def perform_create(self, serializer):
-        """Associate the draft with the current user"""
-        serializer.save(user=self.request.user)
-    
-    def perform_update(self, serializer):
-        """Update the draft name if flightmap name changes"""
-        form_data = self.request.data.get('form_data', {})
-        flightmap_data = form_data.get('flightmaps', {})
-        
-        # Auto-update draft name based on flightmap name
-        if isinstance(flightmap_data, dict) and flightmap_data.get('name'):
-            draft_name = f"{flightmap_data['name']} - Draft"
-            serializer.save(name=draft_name)
-        else:
-            serializer.save()
-    
-    @action(detail=False, methods=['delete'])
-    def delete_old_drafts(self, request):
-        """Delete drafts older than 30 days"""
-        cutoff_date = timezone.now() - timedelta(days=30)
-        deleted_count = FlightmapDraft.objects.filter(
-            user=request.user,
-            updated_at__lt=cutoff_date
-        ).delete()[0]
-        
-        return Response({
-            'message': f'Deleted {deleted_count} old drafts',
-            'status': 'success'
-        })
-    
-    @action(detail=False, methods=['get'])
-    def cleanup_completed(self, request):
-        """Remove drafts that have been completed"""
-        completed_drafts = self.get_queryset().filter(
-            completed_steps__contains=[True, True, True, True, True, True, True]
-        )
-        deleted_count = completed_drafts.delete()[0]
-        
-        return Response({
-            'message': f'Cleaned up {deleted_count} completed drafts',
-            'status': 'success'
-        })
-
 
 class ProgressDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -286,12 +284,12 @@ class ProgressDashboardView(APIView):
         if cached_data:
             return Response(cached_data)
 
-        flightmaps = Flightmap.objects.filter(
+        strategies = Strategy.objects.filter(
             Q(owner=request.user) |
-            Q(strategies__executive_sponsors=request.user) |
-            Q(strategies__strategy_leads=request.user)
+            Q(executive_sponsors=request.user) |
+            Q(strategy_leads=request.user)
         ).prefetch_related(
-            Prefetch('strategies__programs__workstreams__milestones',
+            Prefetch('programs__workstreams__milestones',
                     queryset=Milestone.objects.annotate(
                         timeframe_category=Case(
                             When(deadline__lte=timezone.now().date(), then=Value('overdue')),
@@ -306,17 +304,17 @@ class ProgressDashboardView(APIView):
         ).distinct()
 
         response_data = {
-            'summary': self.get_summary(flightmaps),
-            'employee_contributions': self.get_contributions(flightmaps),
-            'strategic_alignment': self.get_strategic_alignment(flightmaps)
+            'summary': self.get_summary(strategies),
+            'employee_contributions': self.get_contributions(strategies),
+            'strategic_alignment': self.get_strategic_alignment(strategies)
         }
 
         cache.set(cache_key, response_data, 300)  # Cache for 5 minutes
         return Response(response_data)
 
-    def get_summary(self, flightmaps):
+    def get_summary(self, strategies):
         milestones = Milestone.objects.filter(
-            workstream__program__strategy__flightmap__in=flightmaps
+            workstream__program__strategy__in=strategies
         )
         today = timezone.now().date()
 
@@ -334,12 +332,12 @@ class ProgressDashboardView(APIView):
             }
         }
 
-    def get_contributions(self, flightmaps):
+    def get_contributions(self, strategies):
         contributors = User.objects.filter(
-            Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__in=flightmaps) |
+            Q(milestonecontributor__milestone__workstream__program__strategy__in=strategies) |
             # Update to use the new milestone relationships
-            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__in=flightmaps) |
-            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__in=flightmaps)
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__in=strategies) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__in=strategies)
         ).distinct().annotate(
             total_contributions=Count(
                 'milestonecontributor',
@@ -354,9 +352,9 @@ class ProgressDashboardView(APIView):
 
         return EmployeeContributionSerializer(contributors, many=True).data
 
-    def get_strategic_alignment(self, flightmaps):
+    def get_strategic_alignment(self, strategies):
         return StrategicGoal.objects.filter(
-            strategy__flightmap__in=flightmaps
+            strategy__in=strategies
         ).annotate(
             milestone_count=Count('associated_milestones')
         ).values('category', 'milestone_count')
@@ -378,7 +376,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         related_qs = base_qs.filter(
             workstream__isnull=False
         ).filter(
-            Q(workstream__program__strategy__flightmap__owner=user) |
+            Q(workstream__program__strategy__owner=user) |
             Q(workstream__program__strategy__executive_sponsors=user) |
             Q(workstream__program__strategy__strategy_leads=user) |
             Q(workstream__program__strategy__communication_leads=user) |
@@ -455,7 +453,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             Q(source_milestone__isnull=False) | Q(target_milestone__isnull=False)
         ).filter(
             # Filter through source milestone's workstream
-            Q(source_milestone__workstream__program__strategy__flightmap__owner=user) |
+            Q(source_milestone__workstream__program__strategy__owner=user) |
             Q(source_milestone__workstream__program__strategy__executive_sponsors=user) |
             Q(source_milestone__workstream__program__strategy__strategy_leads=user) |
             Q(source_milestone__workstream__program__strategy__communication_leads=user) |
@@ -465,7 +463,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             Q(source_milestone__workstream__workstream_leads=user) |
             Q(source_milestone__workstream__team_members=user) |
             # Also filter through target milestone's workstream
-            Q(target_milestone__workstream__program__strategy__flightmap__owner=user) |
+            Q(target_milestone__workstream__program__strategy__owner=user) |
             Q(target_milestone__workstream__program__strategy__executive_sponsors=user) |
             Q(target_milestone__workstream__program__strategy__strategy_leads=user) |
             Q(target_milestone__workstream__program__strategy__communication_leads=user) |
@@ -501,10 +499,10 @@ class EmployeeContributionsView(generics.ListAPIView):
 
     def get_queryset(self):
         return User.objects.filter(
-            Q(milestonecontributor__milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
+            Q(milestonecontributor__milestone__workstream__program__strategy__owner=self.request.user) |
             # Update the activity contributor filter to use the new relationships
-            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__owner=self.request.user) |
-            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__owner=self.request.user)
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__owner=self.request.user) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__owner=self.request.user)
         ).distinct().annotate(
             completed_milestones=Count(
                 'milestonecontributor',
@@ -529,7 +527,7 @@ class StrategicAlignmentView(APIView):
 
     def get(self, request):
         goals = StrategicGoal.objects.filter(
-            strategy__flightmap__owner=request.user
+            strategy__owner=request.user
         ).annotate(
             milestone_count=Count('associated_milestones'),
             completed_milestones=Count(
@@ -570,7 +568,7 @@ class DashboardMilestoneView(generics.ListAPIView):
 
     def get_queryset(self):
         return Milestone.objects.annotate_progress().filter(
-            workstream__program__strategy__flightmap__owner=self.request.user
+            workstream__program__strategy__owner=self.request.user
         ).select_related('workstream__program__strategy')
 
 
@@ -690,9 +688,9 @@ class RiskAssessmentView(APIView):
 
     def get(self, request):
         today = timezone.now().date()
-        # Select milestones for flightmaps owned by the current user that are not completed.
+        # Select milestones for strategies owned by the current user that are not completed.
         milestones = Milestone.objects.filter(
-            workstream__program__strategy__flightmap__owner=request.user,
+            workstream__program__strategy__owner=request.user,
             status__in=['not_started', 'in_progress']
         )
 
@@ -746,11 +744,11 @@ class ResourceAllocationView(APIView):
 
     def get(self, request):
         today = timezone.now().date()
-        # Filter users associated with activities in flightmaps owned by the current user.
+        # Filter users associated with activities in strategies owned by the current user.
         users = User.objects.filter(
             # Update to use the new relationships through milestones
-            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__flightmap__owner=request.user) |
-            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__flightmap__owner=request.user)
+            Q(activitycontributor__activity__source_milestone__workstream__program__strategy__owner=request.user) |
+            Q(activitycontributor__activity__target_milestone__workstream__program__strategy__owner=request.user)
         ).distinct().annotate(
             current_tasks=Count(
                 'activitycontributor',
@@ -825,9 +823,9 @@ class NodePositionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """Filter positions to only return those for the specified flightmap."""
-        flightmap_id = self.request.query_params.get('flightmap')
-        return NodePosition.objects.filter(flightmap_id=flightmap_id)
+        """Filter positions to only return those for the specified strategy."""
+        strategy_id = self.request.query_params.get('strategy')  # Changed from 'flightmap' to 'strategy'
+        return NodePosition.objects.filter(strategy_id=strategy_id)  # Updated field reference
     
     def perform_create(self, serializer):
         """Track the user who created the position."""
@@ -840,17 +838,17 @@ class NodePositionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['DELETE'])
     def reset(self, request):
         """
-        Reset all node positions for a flightmap.
-        
+        Reset all node positions for a strategy.
+
         This endpoint simply removes existing positions without generating defaults.
         The frontend is responsible for calculating and submitting new positions.
         """
-        flightmap_id = request.query_params.get('flightmap')
-        if not flightmap_id:
-            return Response({"error": "flightmap parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
+        strategy_id = request.query_params.get('strategy')  # Changed from 'flightmap' to 'strategy'
+        if not strategy_id:
+            return Response({"error": "strategy parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Delete all positions for this flightmap
-        deletion_count = NodePosition.objects.filter(flightmap_id=flightmap_id).delete()[0]
+        # Delete all positions for this strategy
+        deletion_count = NodePosition.objects.filter(strategy_id=strategy_id).delete()[0]  # Updated field reference
 
         return Response({
             "message": f"Reset {deletion_count} positions. Awaiting new position data from client.",
@@ -864,7 +862,7 @@ class NodePositionViewSet(viewsets.ModelViewSet):
         
         Expected request format:
         {
-            "flightmap_id": 123,
+            "strategy_id": 123,  # Changed from flightmap_id
             "positions": [
                 {
                     "node_type": "workstream|milestone",
@@ -877,27 +875,22 @@ class NodePositionViewSet(viewsets.ModelViewSet):
                 ...
             ]
         }
-        
-        For optimal performance, this endpoint:
-        1. Validates the input data
-        2. Processes all updates in a single database transaction
-        3. Uses bulk creation for efficiency
         """
-        flightmap_id = request.data.get('flightmap_id')
+        strategy_id = request.data.get('strategy_id')  # Changed from flightmap_id
         positions = request.data.get('positions', [])
         
         # Validate required parameters
-        if not flightmap_id:
-            return Response({"error": "flightmap_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not strategy_id:
+            return Response({"error": "strategy_id is required"}, status=status.HTTP_400_BAD_REQUEST)
         
         if not positions or not isinstance(positions, list):
             return Response({"error": "positions array is required"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate flightmap exists
+        # Validate strategy exists
         try:
-            flightmap = Flightmap.objects.get(id=flightmap_id)
-        except Flightmap.DoesNotExist:
-            return Response({"error": f"Flightmap with ID {flightmap_id} not found"}, 
+            strategy = Strategy.objects.get(id=strategy_id)  # Changed from Flightmap to Strategy
+        except Strategy.DoesNotExist:
+            return Response({"error": f"Strategy with ID {strategy_id} not found"}, 
                            status=status.HTTP_404_NOT_FOUND)
         
         # Process all position updates in a single transaction
@@ -927,7 +920,7 @@ class NodePositionViewSet(viewsets.ModelViewSet):
                     
                     # Check for existing position
                     existing = NodePosition.objects.filter(
-                        flightmap_id=flightmap_id,
+                        strategy_id=strategy_id,  # Updated field reference
                         node_type=pos['node_type'],
                         node_id=pos['node_id']
                     ).first()
@@ -943,7 +936,7 @@ class NodePositionViewSet(viewsets.ModelViewSet):
                     else:
                         # Create new position object
                         position_objects.append(NodePosition(
-                            flightmap=flightmap,
+                            strategy=strategy,  # Updated field reference
                             node_type=pos['node_type'],
                             node_id=pos['node_id'],
                             rel_y=pos['rel_y'],
